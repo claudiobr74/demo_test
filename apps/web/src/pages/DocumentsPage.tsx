@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
+  AUTO_DOCUMENT_VARS,
+  DOCUMENT_VAR_LABELS,
   createDocument,
   downloadDocumentPdf,
   exportDocument,
@@ -7,6 +9,7 @@ import {
   getDocumentTemplates,
   getDocuments,
   getPatients,
+  getProfile,
   updateDocument,
   type DocItem,
   type DocTemplate,
@@ -19,24 +22,46 @@ export default function DocumentsPage() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [patientId, setPatientId] = useState("");
   const [templateId, setTemplateId] = useState("");
+  const [varValues, setVarValues] = useState<Record<string, string>>({});
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [editBody, setEditBody] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [hint, setHint] = useState<string | null>(null);
+  const [profileDefaults, setProfileDefaults] = useState<Record<string, string>>({});
+
+  const selectedTemplate = useMemo(
+    () => templates.find((t) => t.id === templateId) || null,
+    [templates, templateId],
+  );
+
+  const formVars = useMemo(() => {
+    const keys = selectedTemplate?.variables || [];
+    return keys.filter((k) => !AUTO_DOCUMENT_VARS.has(k));
+  }, [selectedTemplate]);
 
   const load = async () => {
     try {
-      const [docs, tpls, pats] = await Promise.all([
+      const [docs, tpls, pats, profile] = await Promise.all([
         getDocuments(),
         getDocumentTemplates(),
         getPatients(),
+        getProfile().catch(() => null),
       ]);
       setItems(docs);
       setTemplates(tpls);
       setPatients(pats);
       if (!patientId && pats[0]) setPatientId(pats[0].id);
       if (!templateId && tpls[0]) setTemplateId(tpls[0].id);
+      if (profile) {
+        const user = profile.user || {};
+        const org = profile.organization || {};
+        setProfileDefaults({
+          crp: String(user.professional_registration || ""),
+          clinic_name: String(org.name || ""),
+          duration: "50",
+        });
+      }
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro em documentos");
@@ -46,6 +71,22 @@ export default function DocumentsPage() {
   useEffect(() => {
     void load();
   }, []);
+
+  useEffect(() => {
+    if (!selectedTemplate) {
+      setVarValues({});
+      return;
+    }
+    const next: Record<string, string> = {};
+    for (const key of selectedTemplate.variables || []) {
+      if (AUTO_DOCUMENT_VARS.has(key)) continue;
+      next[key] = varValues[key] || profileDefaults[key] || "";
+    }
+    // sensible defaults per type
+    if (selectedTemplate.doc_type === "sick_leave" && !next.days) next.days = "1";
+    setVarValues(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset when template changes
+  }, [templateId, selectedTemplate?.id, profileDefaults.crp, profileDefaults.clinic_name]);
 
   const startEdit = (d: DocItem) => {
     setEditingId(d.id);
@@ -58,7 +99,7 @@ export default function DocumentsPage() {
       <header>
         <h1 className="font-serif text-3xl text-emerald-950">Documentos</h1>
         <p className="mt-1 text-emerald-800/80">
-          Modelos, rascunhos editáveis e exportação — sem Google Docs/Drive.
+          Modelos com variáveis, rascunhos editáveis e PDF — sem Google Docs/Drive.
         </p>
       </header>
 
@@ -87,23 +128,37 @@ export default function DocumentsPage() {
           )}
         </div>
         <form
-          className="flex flex-wrap items-end gap-3"
+          className="space-y-4"
           onSubmit={async (e) => {
             e.preventDefault();
             if (!patientId || !templateId) return;
+            for (const key of formVars) {
+              if (key === "cid") continue; // optional
+              if (!(varValues[key] || "").trim()) {
+                setError(`Preencha: ${DOCUMENT_VAR_LABELS[key] || key}`);
+                return;
+              }
+            }
+            setError(null);
             const created = await createDocument({
               patient_id: patientId,
               template_id: templateId,
+              variables: varValues,
             });
-            setHint("Rascunho gerado a partir do modelo.");
+            const leftover = (created.body || "").match(/\{\{[a-zA-Z0-9_]+\}\}/g);
+            setHint(
+              leftover?.length
+                ? "Rascunho gerado — revise placeholders restantes no editor."
+                : "Rascunho gerado a partir do modelo.",
+            );
             await load();
             startEdit(created);
           }}
         >
-          <label className="text-sm">
+          <label className="block text-sm">
             Paciente
             <select
-              className="mt-1 block rounded-xl border px-3 py-2"
+              className="mt-1 block w-full max-w-md rounded-xl border px-3 py-2"
               value={patientId}
               onChange={(e) => setPatientId(e.target.value)}
             >
@@ -114,6 +169,50 @@ export default function DocumentsPage() {
               ))}
             </select>
           </label>
+
+          {formVars.length > 0 && (
+            <div className="grid gap-3 md:grid-cols-2">
+              {formVars.map((key) => (
+                <label key={key} className="block text-sm">
+                  {DOCUMENT_VAR_LABELS[key] || key}
+                  {key === "cid" ? (
+                    <input
+                      className="mt-1 w-full rounded-xl border px-3 py-2"
+                      value={varValues[key] || ""}
+                      onChange={(e) =>
+                        setVarValues((prev) => ({ ...prev, [key]: e.target.value }))
+                      }
+                      placeholder="Somente se autorizado"
+                    />
+                  ) : key === "reason" || key === "summary" ? (
+                    <textarea
+                      className="mt-1 w-full rounded-xl border px-3 py-2"
+                      rows={3}
+                      value={varValues[key] || ""}
+                      onChange={(e) =>
+                        setVarValues((prev) => ({ ...prev, [key]: e.target.value }))
+                      }
+                    />
+                  ) : (
+                    <input
+                      className="mt-1 w-full rounded-xl border px-3 py-2"
+                      value={varValues[key] || ""}
+                      onChange={(e) =>
+                        setVarValues((prev) => ({ ...prev, [key]: e.target.value }))
+                      }
+                    />
+                  )}
+                </label>
+              ))}
+            </div>
+          )}
+
+          {selectedTemplate && (
+            <p className="text-xs text-emerald-800/70">
+              Nome, data, profissional, CRP e clínica são preenchidos automaticamente.
+            </p>
+          )}
+
           <button className="rounded-xl bg-emerald-800 px-4 py-2 text-white" type="submit">
             Gerar rascunho
           </button>

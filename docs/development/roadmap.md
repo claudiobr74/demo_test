@@ -55,6 +55,8 @@
 - Hub: leitura do prontuário CFP (detalhe somente leitura + deep-link) (feito)
 - Fila: paciente confirmou → status do atendimento (feito)
 - Templates: atestado psicológico + encaminhamento (upsert em orgs existentes) (feito)
+- Documentos: formulário de variáveis do modelo + CRP/clínica automáticos (feito)
+- Meu Dia/Agenda: falta usa taxa de sessão do paciente (não valor fixo) (feito)
 
 ### P2/P3 restante
 - Providers reais WhatsApp/SMS/email (fila + fluxo manual já cobrem o consultório sem Gmail)

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import ConfirmationQueuePanel from "../components/ConfirmationQueuePanel";
 import {
   createAppointment,
+  createCharge,
   enqueueConfirmation,
   getAppointments,
   getPatients,
@@ -266,6 +267,35 @@ export default function AgendaPage() {
                 setQueueKey((k) => k + 1);
                 setMsg("Confirmação enfileirada (stub multi-canal — sem Gmail).");
               }}
+              onNoShow={async () => {
+                const name = a.patient_display_name || "paciente";
+                if (
+                  !window.confirm(
+                    `Registrar falta para ${name}? Isso marca no-show e pode gerar cobrança.`,
+                  )
+                ) {
+                  return;
+                }
+                await setAppointmentStatus(a.id, "no_show");
+                const feeRaw = String(a.session_fee ?? "").trim();
+                const fee = Number(feeRaw.replace(",", "."));
+                if (feeRaw && Number.isFinite(fee) && fee > 0) {
+                  try {
+                    await createCharge({
+                      patient_id: a.patient_id,
+                      amount: feeRaw,
+                      description: `Cobrança por falta — ${name}`,
+                      origin: "no_show",
+                    });
+                    setMsg(`Falta registrada. Cobrança de R$ ${feeRaw} gerada.`);
+                  } catch {
+                    setMsg("Falta registrada. Não foi possível gerar a cobrança.");
+                  }
+                } else {
+                  setMsg("Falta registrada. Paciente sem taxa de sessão — cobrança não gerada.");
+                }
+                await load();
+              }}
             />
           ))}
           {items.length === 0 && (
@@ -424,6 +454,7 @@ function AppointmentCard({
   onPlus,
   onCopy,
   onEnqueue,
+  onNoShow,
 }: {
   a: Appointment;
   onConfirm: () => Promise<void>;
@@ -431,6 +462,7 @@ function AppointmentCard({
   onPlus: () => void;
   onCopy: () => Promise<void>;
   onEnqueue: () => Promise<void>;
+  onNoShow: () => Promise<void>;
 }) {
   return (
     <div className="rounded-2xl border border-emerald-200 bg-white/70 p-4">
@@ -445,6 +477,9 @@ function AppointmentCard({
           </div>
           <div className="text-xs text-emerald-800/70">
             {a.status} · {a.modality || "presencial"}
+            {a.session_fee != null && a.session_fee !== ""
+              ? ` · taxa R$ ${a.session_fee}`
+              : ""}
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -462,6 +497,12 @@ function AppointmentCard({
           </button>
           <button className="rounded-lg border px-3 py-1.5 text-sm" onClick={() => void onEnqueue()}>
             Enfileirar
+          </button>
+          <button
+            className="rounded-lg border border-red-200 px-3 py-1.5 text-sm text-red-700"
+            onClick={() => void onNoShow()}
+          >
+            Falta
           </button>
         </div>
       </div>

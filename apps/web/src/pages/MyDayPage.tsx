@@ -245,17 +245,25 @@ export default function MyDayPage({
                       return;
                     }
                     await setAppointmentStatus(String(a.id), "no_show");
-                    try {
-                      await createCharge({
-                        patient_id: String(a.patient_id),
-                        amount: "150",
-                        description: `Cobrança por falta — ${name}`,
-                        origin: "no_show",
-                      });
-                    } catch {
-                      /* cobrança opcional se fee não configurada */
+                    const feeRaw = String(a.session_fee ?? "").trim();
+                    const fee = Number(feeRaw.replace(",", "."));
+                    if (feeRaw && Number.isFinite(fee) && fee > 0) {
+                      try {
+                        await createCharge({
+                          patient_id: String(a.patient_id),
+                          amount: feeRaw,
+                          description: `Cobrança por falta — ${name}`,
+                          origin: "no_show",
+                        });
+                        setHint(`Falta registrada. Cobrança de R$ ${feeRaw} gerada.`);
+                      } catch {
+                        setHint("Falta registrada. Não foi possível gerar a cobrança.");
+                      }
+                    } else {
+                      setHint(
+                        "Falta registrada. Paciente sem taxa de sessão — cobrança não gerada.",
+                      );
                     }
-                    setHint("Falta registrada.");
                     await load();
                   }}
                 >

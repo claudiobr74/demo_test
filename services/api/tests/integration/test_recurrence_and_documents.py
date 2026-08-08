@@ -92,6 +92,28 @@ async def test_document_from_template(client: AsyncClient):
     assert "Hugo" in created.json()["body"]
     doc_id = created.json()["id"]
 
+    sick = next(t for t in items if t["doc_type"] == "sick_leave")
+    await client.patch(
+        "/api/v1/auth/me",
+        headers=headers,
+        json={"professional_registration": "CRP 06/12345", "organization_name": "Clinica Documentos"},
+    )
+    atestado = await client.post(
+        "/api/v1/documents",
+        headers=headers,
+        json={
+            "patient_id": pid,
+            "template_id": sick["id"],
+            "variables": {"days": "2", "cid": ""},
+        },
+    )
+    assert atestado.status_code == 201, atestado.text
+    body = atestado.json()["body"]
+    assert "Hugo" in body
+    assert "2 dia" in body
+    assert "CRP 06/12345" in body
+    assert "{{" not in body
+
     updated = await client.patch(
         f"/api/v1/documents/{doc_id}",
         headers=headers,
@@ -118,7 +140,7 @@ async def test_document_from_template(client: AsyncClient):
 
     listed = await client.get(f"/api/v1/documents?patient_id={pid}", headers=headers)
     assert listed.status_code == 200
-    assert len(listed.json()["items"]) == 1
+    assert len(listed.json()["items"]) >= 2
 
     for fmt in ("txt", "html", "pdf"):
         exported = await client.get(

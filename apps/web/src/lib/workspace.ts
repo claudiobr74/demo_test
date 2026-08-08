@@ -27,6 +27,7 @@ export interface Appointment {
   id: string;
   patient_id: string;
   patient_display_name?: string;
+  session_fee?: string | number | null;
   starts_at: string;
   ends_at?: string;
   duration_minutes?: number;
@@ -75,7 +76,30 @@ export interface DocTemplate {
   name: string;
   doc_type?: string;
   body_template?: string;
+  variables?: string[];
 }
+
+/** Variáveis preenchidas automaticamente na API — não pedimos no formulário. */
+export const AUTO_DOCUMENT_VARS = new Set([
+  "patient_name",
+  "date",
+  "professional_name",
+  "clinic_name",
+  "crp",
+  "duration",
+]);
+
+export const DOCUMENT_VAR_LABELS: Record<string, string> = {
+  days: "Dias de afastamento",
+  cid: "CID (opcional)",
+  destination: "Destino do encaminhamento",
+  reason: "Motivo do encaminhamento",
+  amount: "Valor (R$)",
+  summary: "Resumo",
+  duration: "Duração (minutos)",
+  crp: "CRP",
+  clinic_name: "Clínica / consultório",
+};
 
 export interface ChargeItem {
   id: string;
@@ -390,6 +414,8 @@ export async function createDocument(payload: {
   template_id?: string;
   title?: string;
   body?: string;
+  variables?: Record<string, string>;
+  doc_type?: string;
 }) {
   return apiJson<DocItem>("/api/v1/documents", {
     method: "POST",

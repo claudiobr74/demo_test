@@ -329,6 +329,7 @@ class AppointmentService:
             "id": str(a.id),
             "patient_id": str(a.patient_id),
             "patient_display_name": p.display_name if p else None,
+            "session_fee": str(p.session_fee) if p is not None and p.session_fee is not None else None,
             "professional_id": str(a.professional_id),
             "starts_at": a.starts_at.isoformat(),
             "ends_at": a.ends_at.isoformat(),

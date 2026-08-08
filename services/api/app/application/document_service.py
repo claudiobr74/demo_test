@@ -15,6 +15,7 @@ from app.application.audit import write_audit
 from app.core.errors import NotFoundError, ValidationAppError
 from app.core.permissions import Permission
 from app.infrastructure.db.models_clinical import Patient
+from app.infrastructure.db.models_identity import Organization
 from app.infrastructure.db.models_ops import Document, DocumentTemplate
 
 STORAGE_ROOT = Path(__file__).resolve().parents[2] / "storage" / "documents"
@@ -162,16 +163,24 @@ class DocumentService:
         title = data.get("title") or (template.name if template else "Documento")
         body = data.get("body")
         if body is None and template is not None:
+            org = await self.db.get(Organization, self.auth.organization_id)
             variables = {
                 "patient_name": patient.display_name if patient else "Paciente",
                 "date": datetime.now(UTC).astimezone().strftime("%d/%m/%Y"),
                 "duration": "50",
                 "amount": "",
                 "summary": "",
+                "days": "",
+                "cid": "",
+                "destination": "",
+                "reason": "",
                 "professional_name": self.auth.user.full_name,
-                "clinic_name": "",
+                "crp": self.auth.user.professional_registration or "",
+                "clinic_name": org.name if org else "",
             }
-            variables.update(data.get("variables") or {})
+            user_vars = data.get("variables") or {}
+            if isinstance(user_vars, dict):
+                variables.update({str(k): "" if v is None else str(v) for k, v in user_vars.items()})
             body = _render(template.body_template, variables)
         if not body or not str(body).strip():
             raise ValidationAppError("Conteúdo do documento obrigatório.")
