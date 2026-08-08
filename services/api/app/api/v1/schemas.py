@@ -1,0 +1,121 @@
+"""Pydantic request/response schemas."""
+
+from __future__ import annotations
+
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Any
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
+
+
+class APIModel(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+
+class RegisterRequest(APIModel):
+    organization_name: str = Field(min_length=2, max_length=200)
+    email: EmailStr
+    password: str = Field(min_length=10, max_length=128)
+    full_name: str = Field(min_length=2, max_length=200)
+    default_framework: str = Field(default="cbt", pattern="^(cbt|schema)$")
+    kind: str = Field(default="individual", pattern="^(individual|clinic)$")
+
+
+class LoginRequest(APIModel):
+    email: EmailStr
+    password: str
+    organization_id: UUID | None = None
+
+
+class PatientCreateRequest(APIModel):
+    first_name: str = Field(min_length=1, max_length=100)
+    last_name: str = Field(min_length=1, max_length=100)
+    preferred_name: str | None = None
+    internal_code: str | None = None
+    birth_date: date | None = None
+    gender: str | None = None
+    phone: str | None = None
+    email: EmailStr | None = None
+    address: dict[str, Any] | None = None
+    modality: str = "in_person"
+    session_fee: Decimal | None = None
+    status: str = "active"
+    therapeutic_approach: str | None = None
+    framework: str | None = None
+    admin_notes: str | None = None
+    finance_config: dict[str, Any] | None = None
+    emergency_contact: dict[str, Any] | None = None
+    guardian: dict[str, Any] | None = None
+    responsible_professional_id: UUID | None = None
+
+
+class PatientUpdateRequest(APIModel):
+    first_name: str | None = None
+    last_name: str | None = None
+    preferred_name: str | None = None
+    birth_date: date | None = None
+    gender: str | None = None
+    phone: str | None = None
+    email: EmailStr | None = None
+    address: dict[str, Any] | None = None
+    modality: str | None = None
+    session_fee: Decimal | None = None
+    status: str | None = None
+    therapeutic_approach: str | None = None
+    framework: str | None = None
+    admin_notes: str | None = None
+    finance_config: dict[str, Any] | None = None
+    emergency_contact: dict[str, Any] | None = None
+    guardian: dict[str, Any] | None = None
+    version: int | None = None
+
+
+class AppointmentCreateRequest(APIModel):
+    patient_id: UUID
+    starts_at: datetime
+    duration_minutes: int = Field(default=50, ge=15, le=240)
+    professional_id: UUID | None = None
+    modality: str | None = None
+    location: str | None = None
+    status: str | None = None
+    notes_admin: str | None = None
+    idempotency_key: str | None = None
+
+
+class AppointmentStatusRequest(APIModel):
+    status: str
+    reason: str | None = None
+
+
+class SessionStartRequest(APIModel):
+    patient_id: UUID
+    appointment_id: UUID | None = None
+    idempotency_key: str | None = None
+
+
+class SessionAutosaveRequest(APIModel):
+    focus: str | None = None
+    observations: str | None = None
+    events: str | None = None
+    interventions: str | None = None
+    responses: str | None = None
+    hypotheses: str | None = None
+    tasks: str | None = None
+    agreements: str | None = None
+    planning: str | None = None
+    structured_data: dict[str, Any] | None = None
+    version: int | None = None
+
+
+class SessionCloseRequest(APIModel):
+    finalize_record: bool = True
+
+
+class SupervisorRequest(APIModel):
+    mode: str
+    patient_id: UUID | None = None
+    framework: str | None = None
+    message: str | None = None
+    context: dict[str, Any] = Field(default_factory=dict)

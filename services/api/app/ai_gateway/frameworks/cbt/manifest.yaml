@@ -1,0 +1,20 @@
+cbt:
+  id: cbt
+  version: "1.0.0"
+  name: Terapia Cognitivo-Comportamental
+  cycle: [situation, thought, emotion, behavior, consequence, maintenance]
+  constructs:
+    - automatic_thoughts
+    - intermediate_beliefs
+    - core_beliefs
+    - emotions
+    - behaviors
+    - physiology
+  supervision_rules:
+    - Distinguish facts, observations, inferences and hypotheses
+    - Prefer collaborative empiricism
+    - Never present suggestions as absolute truths
+  quality_checks:
+    - hypotheses_have_epistemology
+    - alternatives_considered
+    - missing_information_listed

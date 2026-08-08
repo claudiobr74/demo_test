@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "cursor/**"]
+  pull_request:
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: serenapsi
+          POSTGRES_PASSWORD: serenapsi
+          POSTGRES_DB: serenapsi_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U serenapsi"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: services/api
+    env:
+      DATABASE_URL: postgresql+asyncpg://serenapsi:serenapsi@localhost:5432/serenapsi_test
+      JWT_SECRET: ci-only-serenapsi-jwt-secret-min-32-chars
+      ENVIRONMENT: test
+      AI_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Lint
+        run: ruff check app tests
+      - name: Tests
+        run: pytest -q --cov=app --cov-report=term-missing
+
+  flutter:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.32.8"
+          channel: stable
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
