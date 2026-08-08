@@ -10,6 +10,9 @@ Este arquivo define as regras persistentes de comportamento e comunicação para
 - Mantenha a consistência com o tema visual atual (**Emerald Theme**), utilizando tons elegantes de verde/esmeralda, tipografia refinada e espaçamentos equilibrados.
 
 ## Sem Google Workspace
-- Não reintroduzir Firebase Auth, Google OAuth, Drive, Sheets, Docs, Calendar, Gmail, Meet ou NotebookLM.
+- Não reintroduzir Firebase Auth, Google OAuth, Drive, Sheets, Docs, Calendar, Gmail, Meet ou sync NotebookLM.
 - Dados e autenticação passam pela SerenaPsi API (JWT + PostgreSQL).
 - IA apenas via Serena AI Gateway.
+- **Menu:** manter os mesmos itens/rótulos do projeto React original
+  (`Meu dia`, `Pacientes`, `Agenda`, `Financeiro`, `Documentos`, `Supervisor IA`,
+  `Conhecimento & NotebookLM`, `Configuração & Backup`). Só as dependências Google mudam.

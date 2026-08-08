@@ -1,7 +1,6 @@
-import { Suspense, lazy, useMemo, useState } from "react";
+import { Suspense, lazy, useState } from "react";
 import { motion } from "motion/react";
 import {
-  canAccessClinical,
   getAccessToken,
   getStoredUser,
   loginWithPassword,
@@ -20,7 +19,6 @@ const FinancePage = lazy(() => import("./pages/FinancePage"));
 const DocumentsPage = lazy(() => import("./pages/DocumentsPage"));
 const SupervisorPage = lazy(() => import("./pages/SupervisorPage"));
 const KnowledgePage = lazy(() => import("./pages/KnowledgePage"));
-const AiUsagePage = lazy(() => import("./pages/AiUsagePage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const SessionPage = lazy(() => import("./pages/SessionPage"));
 const PatientHubPage = lazy(() => import("./pages/PatientHubPage"));
@@ -39,11 +37,6 @@ export default function App() {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loggingIn, setLoggingIn] = useState(false);
 
-  const clinicalAccess = useMemo(
-    () => (user ? canAccessClinical(user.role_key, user.permissions) : false),
-    [user],
-  );
-
   if (!user) {
     return (
       <div className="flex min-h-screen items-center justify-center px-4">
@@ -53,7 +46,9 @@ export default function App() {
           className="w-full max-w-md rounded-3xl border border-emerald-200 bg-white/80 p-8 shadow-lg"
         >
           <FullLogo />
-          <h1 className="mt-4 text-center font-serif text-2xl text-emerald-950">Entrar no consultório</h1>
+          <h1 className="mt-4 text-center font-serif text-2xl text-emerald-950">
+            Entrar no consultório
+          </h1>
           <p className="mt-2 text-center text-sm text-emerald-800/75">
             Autenticação própria SerenaPsi — sem Google Login.
           </p>
@@ -119,12 +114,7 @@ export default function App() {
   if (sessionId) {
     return (
       <Suspense fallback={<p className="p-8">Carregando sessão…</p>}>
-        <SessionPage
-          sessionId={sessionId}
-          onClose={() => {
-            setSessionId(null);
-          }}
-        />
+        <SessionPage sessionId={sessionId} onClose={() => setSessionId(null)} />
       </Suspense>
     );
   }
@@ -144,6 +134,8 @@ export default function App() {
     );
   }
 
+  const isSecretary = user.role_key === "secretary";
+
   const content = (() => {
     switch (tab) {
       case "meudia":
@@ -155,13 +147,23 @@ export default function App() {
       case "financeiro":
         return <FinancePage />;
       case "documentos":
-        return <DocumentsPage />;
+        return isSecretary ? (
+          <p className="text-emerald-800">Documentos clínicos não estão disponíveis para secretaria.</p>
+        ) : (
+          <DocumentsPage />
+        );
       case "supervisor":
-        return clinicalAccess ? <SupervisorPage /> : <p>Acesso clínico necessário.</p>;
-      case "conhecimento":
-        return clinicalAccess ? <KnowledgePage /> : <p>Acesso clínico necessário.</p>;
-      case "ia":
-        return clinicalAccess ? <AiUsagePage /> : <p>Acesso clínico necessário.</p>;
+        return isSecretary ? (
+          <p className="text-emerald-800">Supervisor IA requer perfil clínico.</p>
+        ) : (
+          <SupervisorPage />
+        );
+      case "notebooklm":
+        return isSecretary ? (
+          <p className="text-emerald-800">Conhecimento clínico requer perfil clínico.</p>
+        ) : (
+          <KnowledgePage />
+        );
       case "configuracoes":
         return <SettingsPage user={user} />;
       default:
@@ -176,13 +178,13 @@ export default function App() {
         setCurrentTab={setTab}
         userName={user.full_name}
         roleLabel={mapRoleLabel(user.role_key)}
+        roleKey={user.role_key}
         onLogout={async () => {
           await logoutFromApp();
           setUser(null);
         }}
         isMobileOpen={mobileOpen}
         setIsMobileOpen={setMobileOpen}
-        clinicalAccess={clinicalAccess}
       />
       <main className="px-4 py-6 md:px-8 md:py-8">
         <Suspense fallback={<p className="text-emerald-800/70">Carregando…</p>}>{content}</Suspense>
