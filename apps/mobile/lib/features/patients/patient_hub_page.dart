@@ -452,11 +452,16 @@ class _CaseMemoryBlock extends ConsumerWidget {
                         if ((m['provenance'] as List? ?? []).isNotEmpty)
                           Padding(
                             padding: const EdgeInsets.only(top: 4),
-                            child: Text(
-                              _provenanceLabel(m['provenance'] as List),
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: SerenaColors.inkSoft,
+                            child: Wrap(
+                              spacing: 6,
+                              runSpacing: 4,
+                              children: [
+                                for (final raw in (m['provenance'] as List).take(4))
+                                  _ProvenanceChip(
+                                    item: Map<String, dynamic>.from(raw as Map),
+                                    typeLabel: _provType,
                                   ),
+                              ],
                             ),
                           ),
                         if (m['pending_review'] == true)
@@ -498,18 +503,6 @@ class _CaseMemoryBlock extends ConsumerWidget {
     );
   }
 
-  String _provenanceLabel(List items) {
-    final parts = <String>[];
-    for (final raw in items.take(3)) {
-      final p = Map<String, dynamic>.from(raw as Map);
-      final type = _provType(p['resource_type'] as String?);
-      final note = p['note'] as String?;
-      parts.add(note != null && note.isNotEmpty ? '$type · $note' : type);
-    }
-    final more = items.length > 3 ? ' +${items.length - 3}' : '';
-    return 'Fonte: ${parts.join(' · ')}$more';
-  }
-
   String _provType(String? t) => switch (t) {
         'session' => 'Sessão',
         'clinical_record' => 'Prontuário',
@@ -523,6 +516,25 @@ class _CaseMemoryBlock extends ConsumerWidget {
   Future<void> _addProvenance(BuildContext context, WidgetRef ref, String entryId) async {
     final noteCtrl = TextEditingController();
     var type = 'professional_note';
+    String? resourceId;
+    List<Map<String, dynamic>> sessions = [];
+    List<Map<String, dynamic>> records = [];
+    try {
+      final sess = await ref.read(apiClientProvider).get(
+            '/api/v1/sessions?patient_id=$patientId&limit=12',
+          );
+      sessions = (sess['items'] as List? ?? [])
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+      final rec = await ref.read(apiClientProvider).get(
+            '/api/v1/clinical-records/patients/$patientId',
+          );
+      records = (rec['items'] as List? ?? [])
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+    } catch (_) {}
+
+    if (!context.mounted) return;
     final ok = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -533,35 +545,85 @@ class _CaseMemoryBlock extends ConsumerWidget {
             final bottom = MediaQuery.viewInsetsOf(ctx).bottom;
             return Padding(
               padding: EdgeInsets.fromLTRB(24, 8, 24, 24 + bottom),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text('Vincular fonte', style: Theme.of(ctx).textTheme.headlineMedium),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    value: type,
-                    items: const [
-                      DropdownMenuItem(value: 'session', child: Text('Sessão')),
-                      DropdownMenuItem(value: 'clinical_record', child: Text('Prontuário')),
-                      DropdownMenuItem(value: 'formulation', child: Text('Formulação')),
-                      DropdownMenuItem(value: 'professional_note', child: Text('Nota profissional')),
-                      DropdownMenuItem(value: 'external_report', child: Text('Laudo / externo')),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text('Vincular fonte', style: Theme.of(ctx).textTheme.headlineMedium),
+                    const SizedBox(height: 8),
+                    Text(
+                      'A proveniência liga a memória à sessão ou prontuário de origem.',
+                      style: Theme.of(ctx).textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      value: type,
+                      items: const [
+                        DropdownMenuItem(value: 'session', child: Text('Sessão')),
+                        DropdownMenuItem(value: 'clinical_record', child: Text('Prontuário')),
+                        DropdownMenuItem(value: 'formulation', child: Text('Formulação')),
+                        DropdownMenuItem(value: 'professional_note', child: Text('Nota profissional')),
+                        DropdownMenuItem(value: 'external_report', child: Text('Laudo / externo')),
+                      ],
+                      onChanged: (v) => setLocal(() {
+                        type = v ?? 'professional_note';
+                        resourceId = null;
+                      }),
+                      decoration: const InputDecoration(labelText: 'Tipo de fonte'),
+                    ),
+                    if (type == 'session' && sessions.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        value: resourceId,
+                        items: [
+                          for (final s in sessions)
+                            DropdownMenuItem(
+                              value: s['id'] as String,
+                              child: Text(
+                                (s['started_at'] as String? ?? s['id'] as String)
+                                    .replaceFirst('T', ' ')
+                                    .split('.')
+                                    .first,
+                              ),
+                            ),
+                        ],
+                        onChanged: (v) => setLocal(() => resourceId = v),
+                        decoration: const InputDecoration(labelText: 'Sessão de origem'),
+                      ),
                     ],
-                    onChanged: (v) => setLocal(() => type = v ?? 'professional_note'),
-                    decoration: const InputDecoration(labelText: 'Tipo de fonte'),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: noteCtrl,
-                    decoration: const InputDecoration(labelText: 'Nota (opcional)'),
-                  ),
-                  const SizedBox(height: 16),
-                  FilledButton(
-                    onPressed: () => Navigator.pop(ctx, true),
-                    child: const Text('Vincular'),
-                  ),
-                ],
+                    if (type == 'clinical_record' && records.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        value: resourceId,
+                        items: [
+                          for (final r in records)
+                            DropdownMenuItem(
+                              value: r['id'] as String,
+                              child: Text(
+                                (r['recorded_at'] as String? ?? r['focus'] as String? ?? r['id'] as String)
+                                    .replaceFirst('T', ' ')
+                                    .split('.')
+                                    .first,
+                              ),
+                            ),
+                        ],
+                        onChanged: (v) => setLocal(() => resourceId = v),
+                        decoration: const InputDecoration(labelText: 'Registro de origem'),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: noteCtrl,
+                      decoration: const InputDecoration(labelText: 'Nota (opcional)'),
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      child: const Text('Vincular'),
+                    ),
+                  ],
+                ),
               ),
             );
           },
@@ -573,6 +635,7 @@ class _CaseMemoryBlock extends ConsumerWidget {
       '/api/v1/case-memory/$entryId/provenance',
       body: {
         'resource_type': type,
+        if (resourceId != null) 'resource_id': resourceId,
         if (noteCtrl.text.trim().isNotEmpty) 'note': noteCtrl.text.trim(),
       },
     );
@@ -670,6 +733,52 @@ class _CaseMemoryBlock extends ConsumerWidget {
         'hypothesis' => 'Hipótese',
         _ => 'Observação',
       };
+}
+
+class _ProvenanceChip extends StatelessWidget {
+  const _ProvenanceChip({required this.item, required this.typeLabel});
+
+  final Map<String, dynamic> item;
+  final String Function(String?) typeLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final type = typeLabel(item['resource_type'] as String?);
+    final note = item['note'] as String?;
+    final link = item['deep_link'] as String?;
+    final label = note != null && note.isNotEmpty ? '$type · $note' : type;
+    final child = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: SerenaColors.offWhite,
+        borderRadius: BorderRadius.circular(SerenaRadius.sm),
+        border: Border.all(color: SerenaColors.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            link != null ? Icons.link : Icons.info_outline,
+            size: 14,
+            color: SerenaColors.sageDark,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: SerenaColors.inkSoft,
+                ),
+          ),
+        ],
+      ),
+    );
+    if (link == null || link.isEmpty) return child;
+    return InkWell(
+      onTap: () => context.push(link),
+      borderRadius: BorderRadius.circular(SerenaRadius.sm),
+      child: child,
+    );
+  }
 }
 
 class _ConsentsBlock extends ConsumerWidget {

@@ -203,6 +203,42 @@ class _TodayContent extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 20),
+        SerenaSection(
+          title: 'Tarefas de hoje',
+          child: tasks.isEmpty
+              ? Text(
+                  'Nenhuma tarefa aberta — as pendências chegam aqui.',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                )
+              : Column(
+                  children: [
+                    for (final raw in tasks)
+                      Builder(
+                        builder: (context) {
+                          final task = Map<String, dynamic>.from(raw as Map);
+                          return _TaskTile(
+                            task: task,
+                            onOpen: () {
+                              final link = task['deep_link'] as String?;
+                              if (link != null && link.isNotEmpty) {
+                                context.push(link);
+                              } else if (task['patient_id'] != null) {
+                                context.push('/pacientes/${task['patient_id']}');
+                              }
+                            },
+                            onComplete: () async {
+                              await ref.read(apiClientProvider).post(
+                                    '/api/v1/tasks/${task['id']}/complete',
+                                  );
+                              ref.invalidate(todayProvider);
+                            },
+                          );
+                        },
+                      ),
+                  ],
+                ),
+        ),
+        const SizedBox(height: 20),
         TextButton.icon(
           onPressed: () => context.go('/financeiro'),
           icon: const Icon(Icons.payments_outlined),
@@ -387,6 +423,60 @@ class _ActionRow extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _TaskTile extends StatelessWidget {
+  const _TaskTile({
+    required this.task,
+    required this.onOpen,
+    required this.onComplete,
+  });
+
+  final Map<String, dynamic> task;
+  final VoidCallback onOpen;
+  final VoidCallback onComplete;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: SerenaColors.surface,
+          borderRadius: BorderRadius.circular(SerenaRadius.md),
+          border: Border.all(color: SerenaColors.border),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: InkWell(
+                onTap: onOpen,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      task['title'] as String? ?? '',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    if (task['kind'] != null)
+                      Text(
+                        task['kind'] == 'clinical' ? 'Clínica' : 'Administrativa',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: SerenaColors.inkSoft,
+                            ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            TextButton(onPressed: onOpen, child: const Text('Abrir')),
+            FilledButton(onPressed: onComplete, child: const Text('Concluir')),
+          ],
+        ),
       ),
     );
   }

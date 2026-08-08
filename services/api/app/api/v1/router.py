@@ -15,6 +15,7 @@ from app.api.v1 import (
     patients,
     sessions,
     supervisor,
+    tasks,
     today,
     treatment_plans,
 )
@@ -36,3 +37,4 @@ api_router.include_router(formulations.router, prefix="/formulations", tags=["fo
 api_router.include_router(treatment_plans.router, prefix="/treatment-plans", tags=["treatment-plans"])
 api_router.include_router(hypotheses.router, prefix="/hypotheses", tags=["hypotheses"])
 api_router.include_router(confirmations.router, prefix="/confirmations", tags=["confirmations"])
+api_router.include_router(tasks.router, prefix="/tasks", tags=["tasks"])

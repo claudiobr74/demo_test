@@ -27,18 +27,20 @@
 - Painel de custo/latência AI da organização (API + Flutter `/ia`)
 - Export de documentos (TXT/HTML + stub “para PDF” via impressão)
 - Grade diária na agenda com arrastar-e-soltar entre horários
+- Tarefas acionáveis (API + lista no Meu Dia com concluir/abrir)
+- Deep-links de proveniência → sessão / prontuário / formulação
+- Agenda: DnD na semana, conflitos visuais, snap de 15 min
 
-## Próximo
+## Próximo (pelo prompt inicial)
 
-### P1 restante
-- Refinar DnD (semana, conflitos visuais, snap de minutos)
+### P2/P3 restante
+- Transcrição opcional → proposta → revisão humana (não vira prontuário sozinha)
+- Providers reais WhatsApp/SMS/email (fila já existe)
+- PDF binário (WeasyPrint) + armazenamento de documentos
 
-### P2
-- Deep-links de proveniência → sessão/prontuário
+### P4
+- Knowledge / estudo (cadernos + biblioteca clínica)
+- RAG + motor longitudinal avançado
 
-### P3
-- Providers reais WhatsApp/SMS/email
-- PDF binário (WeasyPrint) e armazenamento de documentos
-
-### P4–P5
-- RAG, motor longitudinal, planos comerciais
+### P5
+- Planos comerciais, feature flags de assinatura, admin org/plataforma

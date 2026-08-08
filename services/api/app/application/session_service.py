@@ -217,6 +217,23 @@ class SessionService:
         patient = await self.db.get(Patient, session.patient_id)
         return self._to_dto(session, patient)
 
+    async def list_for_patient(self, patient_id: uuid.UUID, *, limit: int = 20) -> list[dict]:
+        self.auth.require(Permission.SESSION_READ)
+        await self._owned_patient(patient_id)
+        rows = (
+            await self.db.execute(
+                select(ClinicalSession)
+                .where(
+                    ClinicalSession.organization_id == self.auth.organization_id,
+                    ClinicalSession.patient_id == patient_id,
+                )
+                .order_by(ClinicalSession.started_at.desc().nullslast())
+                .limit(min(limit, 50))
+            )
+        ).scalars().all()
+        patient = await self.db.get(Patient, patient_id)
+        return [self._to_dto(s, patient) for s in rows]
+
     async def prepare_context(self, patient_id: uuid.UUID) -> dict:
         """Session prep — only relevant clinical context, not ten evolutions."""
         self.auth.require(Permission.CLINICAL_RECORD_READ)

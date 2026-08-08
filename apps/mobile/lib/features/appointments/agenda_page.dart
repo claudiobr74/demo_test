@@ -174,6 +174,34 @@ class AgendaPage extends ConsumerWidget {
                         ],
                       );
                     }
+                    if (mode == AgendaViewMode.week) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (items.isEmpty) ...[
+                            Text(
+                              'Nenhum atendimento nesta semana.',
+                              style: Theme.of(context).textTheme.bodyMedium,
+                            ),
+                            const SizedBox(height: 12),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: FilledButton(
+                                onPressed: () => _openCreate(context, ref),
+                                child: const Text('Criar atendimento'),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                          ],
+                          _WeekTimeline(
+                            weekStart: DateTime(anchor.year, anchor.month, anchor.day)
+                                .subtract(Duration(days: anchor.weekday - 1)),
+                            items: items,
+                            onChanged: () => ref.invalidate(agendaProvider),
+                          ),
+                        ],
+                      );
+                    }
                     if (items.isEmpty) {
                       return Container(
                         width: double.infinity,
@@ -209,6 +237,7 @@ class AgendaPage extends ConsumerWidget {
                             child: _AppointmentCard(
                               item: item,
                               onChanged: () => ref.invalidate(agendaProvider),
+                              conflicting: _hasConflict(item, items),
                             ),
                           ),
                       ],
@@ -234,6 +263,32 @@ class AgendaPage extends ConsumerWidget {
       ref.invalidate(agendaProvider);
     }
   }
+}
+
+bool _hasConflict(Map<String, dynamic> item, List<Map<String, dynamic>> all) {
+  final aStart = DateTime.tryParse(item['starts_at'] as String? ?? '');
+  final aEnd = DateTime.tryParse(item['ends_at'] as String? ?? '');
+  if (aStart == null || aEnd == null) return false;
+  final status = item['status'] as String? ?? '';
+  if ({'cancelled', 'rescheduled', 'no_show'}.contains(status)) return false;
+  for (final other in all) {
+    if (other['id'] == item['id']) continue;
+    final oStatus = other['status'] as String? ?? '';
+    if ({'cancelled', 'rescheduled', 'no_show'}.contains(oStatus)) continue;
+    final bStart = DateTime.tryParse(other['starts_at'] as String? ?? '');
+    final bEnd = DateTime.tryParse(other['ends_at'] as String? ?? '');
+    if (bStart == null || bEnd == null) continue;
+    if (aStart.isBefore(bEnd) && bStart.isBefore(aEnd)) return true;
+  }
+  return false;
+}
+
+DateTime _snapToQuarter(DateTime value) {
+  final q = ((value.minute + 7) ~/ 15) * 15;
+  if (q == 60) {
+    return DateTime(value.year, value.month, value.day, value.hour + 1);
+  }
+  return DateTime(value.year, value.month, value.day, value.hour, q);
 }
 
 /// Day grid with hour slots — long-press and drop to reschedule.
@@ -266,7 +321,7 @@ class _DayTimeline extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'Arraste um atendimento para outro horário (pressione e segure).',
+          'Segure e solte em outro horário (ajuste em blocos de 15 min). Conflitos ficam destacados.',
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: SerenaColors.inkSoft),
         ),
         const SizedBox(height: 12),
@@ -275,7 +330,8 @@ class _DayTimeline extends ConsumerWidget {
             hour: hour,
             height: _slotHeight,
             appointments: byHour[hour] ?? const [],
-            onDrop: (item) => _rescheduleToHour(ref, item, hour),
+            allItems: items,
+            onDrop: (item) => _rescheduleToHour(context, ref, item, hour),
             onChanged: onChanged,
           ),
       ],
@@ -283,13 +339,14 @@ class _DayTimeline extends ConsumerWidget {
   }
 
   Future<void> _rescheduleToHour(
+    BuildContext context,
     WidgetRef ref,
     Map<String, dynamic> item,
     int hour,
   ) async {
     final starts = DateTime.tryParse(item['starts_at'] as String? ?? '')?.toLocal();
     if (starts == null) return;
-    final next = DateTime(day.year, day.month, day.day, hour, starts.minute);
+    final next = _snapToQuarter(DateTime(day.year, day.month, day.day, hour, starts.minute));
     if (next.isAtSameMomentAs(starts)) return;
     try {
       await ref.read(apiClientProvider).post(
@@ -300,9 +357,196 @@ class _DayTimeline extends ConsumerWidget {
             },
           );
       onChanged();
-    } catch (_) {
+    } catch (e) {
       onChanged();
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      }
     }
+  }
+}
+
+/// Week grid — columns Mon–Sun with hour drop targets.
+class _WeekTimeline extends ConsumerWidget {
+  const _WeekTimeline({
+    required this.weekStart,
+    required this.items,
+    required this.onChanged,
+  });
+
+  final DateTime weekStart;
+  final List<Map<String, dynamic>> items;
+  final VoidCallback onChanged;
+
+  static const int _startHour = 8;
+  static const int _endHour = 20;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final days = List.generate(7, (i) => weekStart.add(Duration(days: i)));
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Visão semanal — segure um atendimento e solte em outro dia/horário.',
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: SerenaColors.inkSoft),
+        ),
+        const SizedBox(height: 12),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final day in days)
+                SizedBox(
+                  width: 168,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Text(
+                          DateFormat('EEE dd/MM').format(day),
+                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                color: SerenaColors.sageDark,
+                              ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                      for (var hour = _startHour; hour < _endHour; hour++)
+                        _WeekCell(
+                          day: day,
+                          hour: hour,
+                          items: items.where((item) {
+                            final s = DateTime.tryParse(item['starts_at'] as String? ?? '')?.toLocal();
+                            return s != null &&
+                                s.year == day.year &&
+                                s.month == day.month &&
+                                s.day == day.day &&
+                                s.hour == hour;
+                          }).toList(),
+                          allItems: items,
+                          onDrop: (item) => _reschedule(context, ref, item, day, hour),
+                          onChanged: onChanged,
+                        ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _reschedule(
+    BuildContext context,
+    WidgetRef ref,
+    Map<String, dynamic> item,
+    DateTime day,
+    int hour,
+  ) async {
+    final starts = DateTime.tryParse(item['starts_at'] as String? ?? '')?.toLocal();
+    if (starts == null) return;
+    final next = _snapToQuarter(DateTime(day.year, day.month, day.day, hour, starts.minute));
+    if (next.isAtSameMomentAs(starts)) return;
+    try {
+      await ref.read(apiClientProvider).post(
+            '/api/v1/appointments/${item['id']}/reschedule',
+            body: {
+              'starts_at': next.toUtc().toIso8601String(),
+              'version': item['version'],
+            },
+          );
+      onChanged();
+    } catch (e) {
+      onChanged();
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      }
+    }
+  }
+}
+
+class _WeekCell extends StatelessWidget {
+  const _WeekCell({
+    required this.day,
+    required this.hour,
+    required this.items,
+    required this.allItems,
+    required this.onDrop,
+    required this.onChanged,
+  });
+
+  final DateTime day;
+  final int hour;
+  final List<Map<String, dynamic>> items;
+  final List<Map<String, dynamic>> allItems;
+  final Future<void> Function(Map<String, dynamic> item) onDrop;
+  final VoidCallback onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return DragTarget<Map<String, dynamic>>(
+      onWillAcceptWithDetails: (_) => true,
+      onAcceptWithDetails: (d) => onDrop(d.data),
+      builder: (context, candidate, _) {
+        final hot = candidate.isNotEmpty;
+        return Container(
+          constraints: const BoxConstraints(minHeight: 52),
+          margin: const EdgeInsets.only(right: 6, bottom: 2),
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: hot ? SerenaColors.sage.withValues(alpha: 0.15) : SerenaColors.offWhite,
+            border: Border.all(color: SerenaColors.border.withValues(alpha: 0.7)),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                '${hour.toString().padLeft(2, '0')}:00',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(color: SerenaColors.inkSoft),
+              ),
+              for (final item in items)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: LongPressDraggable<Map<String, dynamic>>(
+                    data: item,
+                    feedback: Material(
+                      elevation: 3,
+                      child: SizedBox(
+                        width: 140,
+                        child: _AppointmentCard(
+                          item: item,
+                          onChanged: onChanged,
+                          compact: true,
+                          conflicting: _hasConflict(item, allItems),
+                        ),
+                      ),
+                    ),
+                    childWhenDragging: Opacity(
+                      opacity: 0.3,
+                      child: _AppointmentCard(
+                        item: item,
+                        onChanged: onChanged,
+                        compact: true,
+                        conflicting: _hasConflict(item, allItems),
+                      ),
+                    ),
+                    child: _AppointmentCard(
+                      item: item,
+                      onChanged: onChanged,
+                      compact: true,
+                      conflicting: _hasConflict(item, allItems),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
   }
 }
 
@@ -311,6 +555,7 @@ class _HourSlot extends StatelessWidget {
     required this.hour,
     required this.height,
     required this.appointments,
+    required this.allItems,
     required this.onDrop,
     required this.onChanged,
   });
@@ -318,6 +563,7 @@ class _HourSlot extends StatelessWidget {
   final int hour;
   final double height;
   final List<Map<String, dynamic>> appointments;
+  final List<Map<String, dynamic>> allItems;
   final Future<void> Function(Map<String, dynamic> item) onDrop;
   final VoidCallback onChanged;
 
@@ -377,6 +623,7 @@ class _HourSlot extends StatelessWidget {
                                           item: item,
                                           onChanged: onChanged,
                                           compact: true,
+                                          conflicting: _hasConflict(item, allItems),
                                         ),
                                       ),
                                     ),
@@ -387,12 +634,14 @@ class _HourSlot extends StatelessWidget {
                                       item: item,
                                       onChanged: onChanged,
                                       compact: true,
+                                      conflicting: _hasConflict(item, allItems),
                                     ),
                                   ),
                                   child: _AppointmentCard(
                                     item: item,
                                     onChanged: onChanged,
                                     compact: true,
+                                    conflicting: _hasConflict(item, allItems),
                                   ),
                                 ),
                               ),
@@ -439,7 +688,11 @@ class _MonthAgendaList extends ConsumerWidget {
           for (final item in byDay[key]!)
             Padding(
               padding: const EdgeInsets.only(bottom: 10),
-              child: _AppointmentCard(item: item, onChanged: onChanged),
+              child: _AppointmentCard(
+                item: item,
+                onChanged: onChanged,
+                conflicting: _hasConflict(item, items),
+              ),
             ),
         ],
       ],
@@ -452,11 +705,13 @@ class _AppointmentCard extends ConsumerWidget {
     required this.item,
     required this.onChanged,
     this.compact = false,
+    this.conflicting = false,
   });
 
   final Map<String, dynamic> item;
   final VoidCallback onChanged;
   final bool compact;
+  final bool conflicting;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -467,9 +722,13 @@ class _AppointmentCard extends ConsumerWidget {
     return Container(
       padding: EdgeInsets.all(compact ? 12 : 16),
       decoration: BoxDecoration(
-        color: SerenaColors.surface,
+        color: conflicting
+            ? SerenaColors.danger.withValues(alpha: 0.06)
+            : SerenaColors.surface,
         borderRadius: BorderRadius.circular(SerenaRadius.md),
-        border: Border.all(color: SerenaColors.border),
+        border: Border.all(
+          color: conflicting ? SerenaColors.danger.withValues(alpha: 0.55) : SerenaColors.border,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -484,6 +743,16 @@ class _AppointmentCard extends ConsumerWidget {
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
               ),
+              if (conflicting)
+                Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: Text(
+                    'Conflito',
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          color: SerenaColors.danger,
+                        ),
+                  ),
+                ),
               _StatusBadge(status: status),
             ],
           ),

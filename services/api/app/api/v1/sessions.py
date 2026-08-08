@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import AuthContext, get_current_auth
@@ -9,6 +9,17 @@ from app.application.session_service import SessionService
 from app.infrastructure.db.session import get_db
 
 router = APIRouter()
+
+
+@router.get("")
+async def list_sessions(
+    patient_id: UUID = Query(...),
+    limit: int = Query(20, ge=1, le=50),
+    auth: AuthContext = Depends(get_current_auth),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    items = await SessionService(db, auth).list_for_patient(patient_id, limit=limit)
+    return {"items": items}
 
 
 @router.post("/start", status_code=201)

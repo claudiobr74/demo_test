@@ -477,8 +477,16 @@ class TodayService:
                     "title": t.title,
                     "kind": t.kind,
                     "source": t.source,
+                    "patient_id": str(t.patient_id) if t.patient_id else None,
+                    "source_resource_type": t.source_resource_type,
+                    "source_resource_id": t.source_resource_id,
                     "due_at": t.due_at.isoformat() if t.due_at else None,
                     "priority": t.priority,
+                    "deep_link": (
+                        f"/sessoes/{t.source_resource_id}"
+                        if t.source_resource_type == "session" and t.source_resource_id
+                        else (f"/pacientes/{t.patient_id}" if t.patient_id else None)
+                    ),
                 }
                 for t in open_tasks
             ],

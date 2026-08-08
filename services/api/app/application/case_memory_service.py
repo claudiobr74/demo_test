@@ -182,6 +182,11 @@ class CaseMemoryService:
         return entry
 
     def _dto(self, e: CaseMemoryEntry) -> dict:
+        provenance = [
+            _enrich_provenance(item, patient_id=str(e.patient_id))
+            for item in (e.provenance or [])
+            if isinstance(item, dict)
+        ]
         return {
             "id": str(e.id),
             "patient_id": str(e.patient_id),
@@ -189,7 +194,7 @@ class CaseMemoryService:
             "epistemology": e.epistemology,
             "content": e.content,
             "status": e.status,
-            "provenance": e.provenance,
+            "provenance": provenance,
             "framework": e.framework,
             "source": e.source,
             "accepted_at": e.accepted_at.isoformat() if e.accepted_at else None,
@@ -217,3 +222,25 @@ def _normalize_provenance(items: list) -> list[dict]:
             }
         )
     return out
+
+
+def _enrich_provenance(item: dict, *, patient_id: str) -> dict:
+    """Attach deep_link for Flutter navigation — clinical integrity trail."""
+    enriched = dict(item)
+    resource_type = item.get("resource_type")
+    resource_id = item.get("resource_id")
+    link = None
+    if resource_type == "session" and resource_id:
+        link = f"/sessoes/{resource_id}"
+    elif resource_type == "clinical_record" and patient_id:
+        link = f"/pacientes/{patient_id}/prontuario"
+        if resource_id:
+            link = f"{link}?recordId={resource_id}"
+    elif resource_type == "formulation" and patient_id:
+        link = f"/pacientes/{patient_id}/formulacao"
+    elif resource_type == "appointment":
+        link = "/agenda"
+    elif resource_type in {"professional_note", "external_report", "case_memory"} and patient_id:
+        link = f"/pacientes/{patient_id}"
+    enriched["deep_link"] = link
+    return enriched

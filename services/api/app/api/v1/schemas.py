@@ -246,3 +246,19 @@ class TreatmentGoalUpdateRequest(APIModel):
     strategies: list[str] | None = None
     status: str | None = None
     sort_order: int | None = None
+
+
+class TaskCreateRequest(APIModel):
+    title: str = Field(min_length=1)
+    description: str | None = None
+    patient_id: UUID | None = None
+    kind: str = "admin"
+    priority: int = 0
+    due_at: datetime | None = None
+    source: str | None = "manual"
+    source_resource_type: str | None = None
+    source_resource_id: str | None = None
+
+
+class TaskCompleteRequest(APIModel):
+    confirm: bool = True
