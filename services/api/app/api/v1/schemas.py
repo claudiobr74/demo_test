@@ -196,3 +196,27 @@ class FormulationUpsertRequest(APIModel):
     framework: str | None = None
     body: dict[str, Any] | None = None
     version: int | None = None
+
+
+class TreatmentPlanUpsertRequest(APIModel):
+    priority_problems: list[str] | None = None
+    initial_formulation_summary: str | None = None
+    body: dict[str, Any] | None = None
+    status: str | None = None
+
+
+class TreatmentGoalCreateRequest(APIModel):
+    title: str = Field(min_length=1)
+    specific_objectives: list[str] | None = None
+    indicators: list[str] | None = None
+    strategies: list[str] | None = None
+    status: str | None = None
+
+
+class TreatmentGoalUpdateRequest(APIModel):
+    title: str | None = None
+    specific_objectives: list[str] | None = None
+    indicators: list[str] | None = None
+    strategies: list[str] | None = None
+    status: str | None = None
+    sort_order: int | None = None

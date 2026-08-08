@@ -264,6 +264,16 @@ class SessionService:
         except Exception:
             formulation = None
 
+        active_goals: list[dict] = []
+        try:
+            from app.application.treatment_plan_service import TreatmentPlanService
+
+            active_goals = await TreatmentPlanService(self.db, self.auth).active_goals_compact(
+                patient_id
+            )
+        except Exception:
+            active_goals = []
+
         suggested = None
         if formulation and formulation.get("therapeutic_focus"):
             suggested = formulation["therapeutic_focus"]
@@ -296,6 +306,7 @@ class SessionService:
             ],
             "case_memory": memory,
             "formulation": formulation,
+            "active_goals": active_goals,
             "active_tasks": [{"id": str(t.id), "title": t.title} for t in open_tasks],
             "suggested_focus": suggested,
             "supervisor_action": "Abrir Supervisor IA — Preparar próxima sessão",

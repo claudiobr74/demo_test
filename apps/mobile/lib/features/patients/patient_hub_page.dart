@@ -86,6 +86,11 @@ class PatientHubPage extends ConsumerWidget {
                     label: const Text('Formulação viva'),
                   ),
                   OutlinedButton.icon(
+                    onPressed: () => context.push('/pacientes/$patientId/plano'),
+                    icon: const Icon(Icons.flag_outlined),
+                    label: const Text('Plano terapêutico'),
+                  ),
+                  OutlinedButton.icon(
                     onPressed: () => context.push('/sessoes/nova?patientId=$patientId'),
                     icon: const Icon(Icons.play_arrow_outlined),
                     label: const Text('Nova sessão'),
@@ -237,6 +242,16 @@ class _CaseMemoryBlock extends ConsumerWidget {
                               ),
                         ),
                         Text(m['content'] as String? ?? ''),
+                        if ((m['provenance'] as List? ?? []).isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              _provenanceLabel(m['provenance'] as List),
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: SerenaColors.inkSoft,
+                                  ),
+                            ),
+                          ),
                         if (m['pending_review'] == true)
                           Text(
                             'Sugestão da IA — aguardando aceite',
@@ -256,6 +271,12 @@ class _CaseMemoryBlock extends ConsumerWidget {
                         ref.invalidate(patientMemoryProvider(patientId));
                       },
                       child: const Text('Aceitar'),
+                    )
+                  else
+                    IconButton(
+                      tooltip: 'Vincular fonte',
+                      onPressed: () => _addProvenance(context, ref, m['id'] as String),
+                      icon: const Icon(Icons.link, size: 20),
                     ),
                 ],
               ),
@@ -270,9 +291,92 @@ class _CaseMemoryBlock extends ConsumerWidget {
     );
   }
 
+  String _provenanceLabel(List items) {
+    final parts = <String>[];
+    for (final raw in items.take(3)) {
+      final p = Map<String, dynamic>.from(raw as Map);
+      final type = _provType(p['resource_type'] as String?);
+      final note = p['note'] as String?;
+      parts.add(note != null && note.isNotEmpty ? '$type · $note' : type);
+    }
+    final more = items.length > 3 ? ' +${items.length - 3}' : '';
+    return 'Fonte: ${parts.join(' · ')}$more';
+  }
+
+  String _provType(String? t) => switch (t) {
+        'session' => 'Sessão',
+        'clinical_record' => 'Prontuário',
+        'formulation' => 'Formulação',
+        'appointment' => 'Agenda',
+        'professional_note' => 'Nota',
+        'external_report' => 'Laudo',
+        _ => t ?? 'Fonte',
+      };
+
+  Future<void> _addProvenance(BuildContext context, WidgetRef ref, String entryId) async {
+    final noteCtrl = TextEditingController();
+    var type = 'professional_note';
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setLocal) {
+            final bottom = MediaQuery.viewInsetsOf(ctx).bottom;
+            return Padding(
+              padding: EdgeInsets.fromLTRB(24, 8, 24, 24 + bottom),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text('Vincular fonte', style: Theme.of(ctx).textTheme.headlineMedium),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: type,
+                    items: const [
+                      DropdownMenuItem(value: 'session', child: Text('Sessão')),
+                      DropdownMenuItem(value: 'clinical_record', child: Text('Prontuário')),
+                      DropdownMenuItem(value: 'formulation', child: Text('Formulação')),
+                      DropdownMenuItem(value: 'professional_note', child: Text('Nota profissional')),
+                      DropdownMenuItem(value: 'external_report', child: Text('Laudo / externo')),
+                    ],
+                    onChanged: (v) => setLocal(() => type = v ?? 'professional_note'),
+                    decoration: const InputDecoration(labelText: 'Tipo de fonte'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: noteCtrl,
+                    decoration: const InputDecoration(labelText: 'Nota (opcional)'),
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: const Text('Vincular'),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+    if (ok != true) return;
+    await ref.read(apiClientProvider).post(
+      '/api/v1/case-memory/$entryId/provenance',
+      body: {
+        'resource_type': type,
+        if (noteCtrl.text.trim().isNotEmpty) 'note': noteCtrl.text.trim(),
+      },
+    );
+    ref.invalidate(patientMemoryProvider(patientId));
+  }
+
   Future<void> _addMemory(BuildContext context, WidgetRef ref) async {
     final contentCtrl = TextEditingController();
+    final noteCtrl = TextEditingController();
     var kind = 'observation';
+    var provType = 'professional_note';
     final ok = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -308,6 +412,23 @@ class _CaseMemoryBlock extends ConsumerWidget {
                       alignLabelWithHint: true,
                     ),
                   ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: provType,
+                    items: const [
+                      DropdownMenuItem(value: 'professional_note', child: Text('Nota profissional')),
+                      DropdownMenuItem(value: 'session', child: Text('Sessão')),
+                      DropdownMenuItem(value: 'formulation', child: Text('Formulação')),
+                      DropdownMenuItem(value: 'clinical_record', child: Text('Prontuário')),
+                    ],
+                    onChanged: (v) => setLocal(() => provType = v ?? 'professional_note'),
+                    decoration: const InputDecoration(labelText: 'Fonte'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: noteCtrl,
+                    decoration: const InputDecoration(labelText: 'Detalhe da fonte (opcional)'),
+                  ),
                   const SizedBox(height: 16),
                   FilledButton(
                     onPressed: () => Navigator.pop(ctx, true),
@@ -323,7 +444,16 @@ class _CaseMemoryBlock extends ConsumerWidget {
     if (ok != true || contentCtrl.text.trim().isEmpty) return;
     await ref.read(apiClientProvider).post(
       '/api/v1/case-memory/patients/$patientId',
-      body: {'kind': kind, 'content': contentCtrl.text.trim()},
+      body: {
+        'kind': kind,
+        'content': contentCtrl.text.trim(),
+        'provenance': [
+          {
+            'resource_type': provType,
+            if (noteCtrl.text.trim().isNotEmpty) 'note': noteCtrl.text.trim(),
+          },
+        ],
+      },
     );
     ref.invalidate(patientMemoryProvider(patientId));
   }

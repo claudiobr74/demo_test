@@ -13,6 +13,7 @@ from app.api.v1 import (
     sessions,
     supervisor,
     today,
+    treatment_plans,
 )
 
 api_router = APIRouter()
@@ -28,3 +29,4 @@ api_router.include_router(finance.router, prefix="/finance", tags=["finance"])
 api_router.include_router(case_memory.router, prefix="/case-memory", tags=["case-memory"])
 api_router.include_router(documents.router, prefix="/documents", tags=["documents"])
 api_router.include_router(formulations.router, prefix="/formulations", tags=["formulations"])
+api_router.include_router(treatment_plans.router, prefix="/treatment-plans", tags=["treatment-plans"])

@@ -174,15 +174,19 @@ class ContextBuilder:
     def build(self, mode: SupervisorMode, raw_context: dict[str, Any]) -> dict[str, Any]:
         budget = self.TOKEN_BUDGETS.get(mode, 8_000)
         # Prefer structured case memory over raw session dumps.
+        memory = raw_context.get("case_memory") or {}
+        facts = raw_context.get("facts") or memory.get("facts") or []
+        observations = raw_context.get("observations") or memory.get("observations") or []
+        hypotheses = raw_context.get("hypotheses") or memory.get("hypotheses") or []
         selected = {
             "mode": mode.value,
             "patient_code": raw_context.get("patient_code"),
             "framework": raw_context.get("framework"),
             "formulation": raw_context.get("formulation"),
-            "active_goals": raw_context.get("active_goals", [])[:10],
-            "recent_facts": raw_context.get("facts", [])[:20],
-            "recent_observations": raw_context.get("observations", [])[:20],
-            "active_hypotheses": raw_context.get("hypotheses", [])[:15],
+            "active_goals": (raw_context.get("active_goals") or [])[:10],
+            "recent_facts": facts[:20],
+            "recent_observations": observations[:20],
+            "active_hypotheses": hypotheses[:15],
             "token_budget": budget,
         }
         if mode == SupervisorMode.PREPARE_SESSION:
@@ -314,7 +318,11 @@ class SerenaAIGateway:
         raw_context: dict[str, Any],
         user_message: str | None = None,
     ) -> StructuredSupervisorResult:
-        if not settings.ai_enabled or not settings.openai_api_key:
+        if not settings.ai_enabled:
+            return self._offline_assist(mode, framework_id, raw_context, user_message)
+        # Offline unless at least one configured provider key exists for the resolved model.
+        has_any_key = bool(settings.openai_api_key or settings.gemini_api_key)
+        if not has_any_key:
             return self._offline_assist(mode, framework_id, raw_context, user_message)
 
         model_class = MODE_MODEL_CLASS[mode]
@@ -324,15 +332,22 @@ class SerenaAIGateway:
         framework = self.frameworks.get(framework_id)
 
         try:
-            from app.ai_gateway.providers import OpenAIProvider
+            from app.ai_gateway.providers import resolve_provider
 
-            if spec.provider != "openai":
+            provider = resolve_provider(spec.provider)
+            # Require matching API key for the selected provider
+            if spec.provider == "openai" and not settings.openai_api_key:
                 raise AppError(
                     "AI_PROVIDER_NOT_CONFIGURED",
-                    f"Provedor {spec.provider} ainda não está plugado.",
+                    "Chave OpenAI não configurada.",
                     status_code=503,
                 )
-            provider = OpenAIProvider()
+            if spec.provider == "gemini" and not settings.gemini_api_key:
+                raise AppError(
+                    "AI_PROVIDER_NOT_CONFIGURED",
+                    "Chave Gemini não configurada.",
+                    status_code=503,
+                )
             system = (
                 "Você é o Supervisor Clínico SerenaPsi. Responda APENAS JSON válido com chaves: "
                 "summary (objeto com message), hypotheses (lista de {text, epistemology}), "

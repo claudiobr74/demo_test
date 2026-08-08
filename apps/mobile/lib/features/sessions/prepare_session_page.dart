@@ -30,6 +30,7 @@ class PrepareSessionPage extends ConsumerWidget {
           final last = data['last_session_summary'] as Map?;
           final memory = data['case_memory'] as Map? ?? {};
           final formulation = data['formulation'] as Map?;
+          final goals = data['active_goals'] as List? ?? [];
           final tasks = data['active_tasks'] as List? ?? [];
           final focus = data['suggested_focus'] as String?;
 
@@ -105,6 +106,22 @@ class PrepareSessionPage extends ConsumerWidget {
                     _memBlock(context, 'Hipóteses', memory['hypotheses'] as List? ?? []),
                   ],
                 ),
+              ),
+              const SizedBox(height: 16),
+              SerenaSection(
+                title: 'Metas ativas',
+                child: goals.isEmpty
+                    ? const Text('Nenhuma meta terapêutica ativa.')
+                    : Column(
+                        children: [
+                          for (final g in goals)
+                            ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: const Icon(Icons.flag_outlined, size: 20),
+                              title: Text((g as Map)['title'] as String? ?? ''),
+                            ),
+                        ],
+                      ),
               ),
               const SizedBox(height: 16),
               SerenaSection(

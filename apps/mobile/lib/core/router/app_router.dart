@@ -10,6 +10,7 @@ import '../../features/patients/clinical_records_page.dart';
 import '../../features/patients/formulation_page.dart';
 import '../../features/patients/patient_hub_page.dart';
 import '../../features/patients/patients_page.dart';
+import '../../features/patients/treatment_plan_page.dart';
 import '../../features/sessions/prepare_session_page.dart';
 import '../../features/sessions/session_page.dart';
 import '../../features/shell/app_shell.dart';
@@ -70,6 +71,12 @@ final routerProvider = Provider<GoRouter>((ref) {
                   GoRoute(
                     path: 'formulacao',
                     builder: (context, state) => FormulationPage(
+                      patientId: state.pathParameters['id']!,
+                    ),
+                  ),
+                  GoRoute(
+                    path: 'plano',
+                    builder: (context, state) => TreatmentPlanPage(
                       patientId: state.pathParameters['id']!,
                     ),
                   ),
