@@ -9,6 +9,10 @@ export type SerenaUser = {
   id: string;
   email: string;
   full_name: string;
+  preferred_name?: string | null;
+  professional_registration?: string | null;
+  specialty?: string | null;
+  default_framework?: string | null;
   organization_id: string;
   organization_name?: string;
   role_key: string;
@@ -92,6 +96,23 @@ export async function logoutFromApp(): Promise<void> {
   } catch {
     /* ignore */
   }
+}
+
+/** Atualiza o usuário persistido após PATCH /auth/me. */
+export function updateStoredUser(patch: Partial<SerenaUser>): SerenaUser | null {
+  const current = getStoredUser();
+  if (!current) return null;
+  const next = { ...current, ...patch };
+  try {
+    if (localStorage.getItem(USER_KEY)) {
+      localStorage.setItem(USER_KEY, JSON.stringify(next));
+    } else {
+      sessionStorage.setItem(USER_KEY, JSON.stringify(next));
+    }
+  } catch {
+    /* ignore */
+  }
+  return next;
 }
 
 export function mapRoleLabel(roleKey: string): string {

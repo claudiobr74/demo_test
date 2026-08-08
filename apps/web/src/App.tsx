@@ -31,6 +31,7 @@ export default function App() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [patientId, setPatientId] = useState<string | null>(null);
+  const [supervisorPatientId, setSupervisorPatientId] = useState<string | null>(null);
   const [email, setEmail] = useState("dra.marina@serenapsi.dev");
   const [password, setPassword] = useState("SerenaPsi!dev1");
   const [keepSignedIn, setKeepSignedIn] = useState(true);
@@ -139,7 +140,15 @@ export default function App() {
   const content = (() => {
     switch (tab) {
       case "meudia":
-        return <MyDayPage onOpenSession={setSessionId} />;
+        return (
+          <MyDayPage
+            onOpenSession={setSessionId}
+            onPreparePatient={(id) => {
+              setSupervisorPatientId(id);
+              setTab("supervisor");
+            }}
+          />
+        );
       case "pacientes":
         return <PatientsPage onOpenPatient={setPatientId} />;
       case "agenda":
@@ -156,7 +165,7 @@ export default function App() {
         return isSecretary ? (
           <p className="text-emerald-800">Supervisor IA requer perfil clínico.</p>
         ) : (
-          <SupervisorPage />
+          <SupervisorPage initialPatientId={supervisorPatientId || undefined} />
         );
       case "notebooklm":
         return isSecretary ? (
@@ -165,7 +174,12 @@ export default function App() {
           <KnowledgePage />
         );
       case "configuracoes":
-        return <SettingsPage user={user} />;
+        return (
+          <SettingsPage
+            user={user}
+            onUserUpdated={(next) => setUser(next)}
+          />
+        );
       default:
         return null;
     }

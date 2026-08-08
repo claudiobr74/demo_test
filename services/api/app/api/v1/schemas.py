@@ -29,6 +29,38 @@ class LoginRequest(APIModel):
     organization_id: UUID | None = None
 
 
+class ProfileUpdateRequest(APIModel):
+    full_name: str | None = Field(default=None, min_length=2, max_length=200)
+    preferred_name: str | None = Field(default=None, max_length=100)
+    professional_registration: str | None = Field(default=None, max_length=64)
+    specialty: str | None = Field(default=None, max_length=120)
+    default_framework: str | None = Field(default=None, pattern="^(cbt|schema)$")
+    organization_name: str | None = Field(default=None, min_length=2, max_length=200)
+    timezone: str | None = Field(default=None, max_length=64)
+    monthly_goal: Decimal | None = None
+    pix_key: str | None = Field(default=None, max_length=140)
+
+
+class ExpenseCreateRequest(APIModel):
+    category: str = Field(min_length=1, max_length=64)
+    amount: Decimal
+    vendor: str | None = Field(default=None, max_length=200)
+    due_date: date | None = None
+    status: str = "pending"
+    notes: str | None = None
+    recurrence_rule: str | None = Field(default=None, max_length=255)
+
+
+class ExpenseUpdateRequest(APIModel):
+    category: str | None = Field(default=None, max_length=64)
+    amount: Decimal | None = None
+    vendor: str | None = Field(default=None, max_length=200)
+    due_date: date | None = None
+    status: str | None = None
+    notes: str | None = None
+    mark_paid: bool | None = None
+
+
 class PatientCreateRequest(APIModel):
     first_name: str = Field(min_length=1, max_length=100)
     last_name: str = Field(min_length=1, max_length=100)

@@ -320,6 +320,17 @@ export async function getDocuments(): Promise<DocItem[]> {
   return data.items || [];
 }
 
+export interface ExpenseItem {
+  id: string;
+  vendor?: string | null;
+  category: string;
+  amount: string | number;
+  due_date?: string | null;
+  paid_at?: string | null;
+  status: string;
+  notes?: string | null;
+}
+
 export async function getFinanceSummary() {
   return apiJson<Record<string, unknown>>("/api/v1/finance/summary");
 }
@@ -327,6 +338,97 @@ export async function getFinanceSummary() {
 export async function getFinanceCharges() {
   const data = await apiJson<{ items: unknown[] }>("/api/v1/finance/charges");
   return data.items || [];
+}
+
+export async function getExpenses(): Promise<ExpenseItem[]> {
+  const data = await apiJson<{ items: ExpenseItem[] }>("/api/v1/finance/expenses");
+  return data.items || [];
+}
+
+export async function createExpense(payload: {
+  category: string;
+  amount: number | string;
+  vendor?: string;
+  due_date?: string;
+  status?: string;
+  notes?: string;
+}): Promise<ExpenseItem> {
+  return apiJson<ExpenseItem>("/api/v1/finance/expenses", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateExpense(
+  id: string,
+  payload: {
+    category?: string;
+    amount?: number | string;
+    vendor?: string;
+    due_date?: string;
+    status?: string;
+    notes?: string;
+    mark_paid?: boolean;
+  },
+): Promise<ExpenseItem> {
+  return apiJson<ExpenseItem>(`/api/v1/finance/expenses/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getProfile() {
+  return apiJson<{
+    user: Record<string, unknown>;
+    organization: Record<string, unknown>;
+    membership: Record<string, unknown>;
+  }>("/api/v1/auth/me");
+}
+
+export async function updateProfile(payload: Record<string, unknown>) {
+  return apiJson<{
+    user: Record<string, unknown>;
+    organization: Record<string, unknown>;
+    membership: Record<string, unknown>;
+  }>("/api/v1/auth/me", {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+/** Exportação local JSON — substitui backup para Google Drive/Sheets. */
+export async function buildLocalBackupExport(): Promise<Record<string, unknown>> {
+  const start = new Date();
+  start.setDate(1);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setMonth(end.getMonth() + 1);
+
+  const [profile, patients, charges, expenses, appointments, tasks, documents, summary] =
+    await Promise.all([
+      getProfile(),
+      getPatients(),
+      getFinanceCharges(),
+      getExpenses(),
+      getAppointments(start.toISOString(), end.toISOString()),
+      getTasks(),
+      getDocuments(),
+      getFinanceSummary(),
+    ]);
+
+  return {
+    exported_at: new Date().toISOString(),
+    source: "serenapsi-api",
+    note: "Backup operacional local — sem Google Drive/Sheets.",
+    profile,
+    summary,
+    patients,
+    charges,
+    expenses,
+    appointments,
+    tasks,
+    documents,
+  };
 }
 
 export async function runSupervisor(payload: {

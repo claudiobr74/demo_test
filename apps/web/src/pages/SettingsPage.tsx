@@ -1,17 +1,61 @@
 import { useEffect, useState } from "react";
 import type { SerenaUser } from "../lib/auth";
-import { getAiUsage } from "../lib/workspace";
+import { updateStoredUser } from "../lib/auth";
+import {
+  buildLocalBackupExport,
+  getAiUsage,
+  getProfile,
+  updateProfile,
+} from "../lib/workspace";
 
-type Props = { user: SerenaUser };
+type Props = {
+  user: SerenaUser;
+  onUserUpdated?: (user: SerenaUser) => void;
+};
 
 /**
  * Item de menu "Configuração & Backup" — igual ao React original.
- * Backup local da organização via API; sem Google Drive/Sheets.
+ * Backup local JSON da organização via API; sem Google Drive/Sheets.
  */
-export default function SettingsPage({ user }: Props) {
+export default function SettingsPage({ user, onUserUpdated }: Props) {
   const [days, setDays] = useState(30);
   const [usage, setUsage] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [hint, setHint] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  const [fullName, setFullName] = useState(user.full_name);
+  const [preferredName, setPreferredName] = useState(user.preferred_name || "");
+  const [crp, setCrp] = useState(user.professional_registration || "");
+  const [specialty, setSpecialty] = useState(user.specialty || "");
+  const [framework, setFramework] = useState(user.default_framework || "cbt");
+  const [orgName, setOrgName] = useState(user.organization_name || "");
+  const [pixKey, setPixKey] = useState("");
+  const [monthlyGoal, setMonthlyGoal] = useState("10000");
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const me = await getProfile();
+        const u = me.user;
+        const org = me.organization as {
+          name?: string;
+          settings?: { pix_key?: string; monthly_goal?: string };
+        };
+        setFullName(String(u.full_name || user.full_name));
+        setPreferredName(String(u.preferred_name || ""));
+        setCrp(String(u.professional_registration || ""));
+        setSpecialty(String(u.specialty || ""));
+        setFramework(String(u.default_framework || "cbt"));
+        setOrgName(String(org.name || user.organization_name || ""));
+        setPixKey(String(org.settings?.pix_key || ""));
+        setMonthlyGoal(String(org.settings?.monthly_goal || "10000"));
+      } catch {
+        /* perfil local já preenchido */
+      }
+    })();
+  }, [user]);
 
   useEffect(() => {
     void (async () => {
@@ -34,24 +78,134 @@ export default function SettingsPage({ user }: Props) {
         </p>
       </header>
 
-      <section className="rounded-2xl border border-emerald-200 bg-white/70 p-5 space-y-2 text-sm">
-        <h2 className="font-semibold text-emerald-800">Perfil</h2>
-        <div>
-          <span className="text-emerald-700">Nome</span>
-          <div className="font-medium">{user.full_name}</div>
-        </div>
-        <div>
-          <span className="text-emerald-700">E-mail</span>
-          <div className="font-medium">{user.email}</div>
-        </div>
-        <div>
-          <span className="text-emerald-700">Organização</span>
-          <div className="font-medium">{user.organization_name || user.organization_id}</div>
-        </div>
-        <div>
-          <span className="text-emerald-700">Perfil</span>
-          <div className="font-medium">{user.role_key}</div>
-        </div>
+      {hint && <p className="rounded-xl bg-emerald-100 px-3 py-2 text-sm">{hint}</p>}
+
+      <section className="rounded-2xl border border-emerald-200 bg-white/70 p-5 space-y-3">
+        <h2 className="font-semibold text-emerald-800">Perfil editável</h2>
+        <form
+          className="grid gap-3 md:grid-cols-2"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            setSaving(true);
+            setError(null);
+            try {
+              const result = await updateProfile({
+                full_name: fullName,
+                preferred_name: preferredName || null,
+                professional_registration: crp || null,
+                specialty: specialty || null,
+                default_framework: framework,
+                organization_name: orgName || undefined,
+                pix_key: pixKey || null,
+                monthly_goal: monthlyGoal || null,
+              });
+              const next = updateStoredUser({
+                full_name: String(result.user.full_name || fullName),
+                preferred_name: (result.user.preferred_name as string) || null,
+                professional_registration:
+                  (result.user.professional_registration as string) || null,
+                specialty: (result.user.specialty as string) || null,
+                default_framework: (result.user.default_framework as string) || framework,
+                organization_name: String(
+                  (result.organization as { name?: string }).name || orgName,
+                ),
+              });
+              if (next) onUserUpdated?.(next);
+              setHint("Perfil atualizado.");
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "Falha ao salvar perfil");
+            } finally {
+              setSaving(false);
+            }
+          }}
+        >
+          <label className="text-sm">
+            Nome completo
+            <input
+              className="mt-1 w-full rounded-xl border px-3 py-2"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              required
+            />
+          </label>
+          <label className="text-sm">
+            Nome preferencial
+            <input
+              className="mt-1 w-full rounded-xl border px-3 py-2"
+              value={preferredName}
+              onChange={(e) => setPreferredName(e.target.value)}
+            />
+          </label>
+          <label className="text-sm">
+            E-mail
+            <input
+              className="mt-1 w-full rounded-xl border px-3 py-2 bg-emerald-50/50"
+              value={user.email}
+              disabled
+            />
+          </label>
+          <label className="text-sm">
+            CRP / registro
+            <input
+              className="mt-1 w-full rounded-xl border px-3 py-2"
+              value={crp}
+              onChange={(e) => setCrp(e.target.value)}
+            />
+          </label>
+          <label className="text-sm">
+            Especialidade
+            <input
+              className="mt-1 w-full rounded-xl border px-3 py-2"
+              value={specialty}
+              onChange={(e) => setSpecialty(e.target.value)}
+            />
+          </label>
+          <label className="text-sm">
+            Abordagem padrão
+            <select
+              className="mt-1 w-full rounded-xl border px-3 py-2"
+              value={framework}
+              onChange={(e) => setFramework(e.target.value)}
+            >
+              <option value="cbt">TCC</option>
+              <option value="schema">Schema Therapy</option>
+            </select>
+          </label>
+          <label className="text-sm">
+            Organização
+            <input
+              className="mt-1 w-full rounded-xl border px-3 py-2"
+              value={orgName}
+              onChange={(e) => setOrgName(e.target.value)}
+            />
+          </label>
+          <label className="text-sm">
+            Chave Pix
+            <input
+              className="mt-1 w-full rounded-xl border px-3 py-2"
+              value={pixKey}
+              onChange={(e) => setPixKey(e.target.value)}
+            />
+          </label>
+          <label className="text-sm">
+            Meta mensal (R$)
+            <input
+              className="mt-1 w-full rounded-xl border px-3 py-2"
+              value={monthlyGoal}
+              onChange={(e) => setMonthlyGoal(e.target.value)}
+            />
+          </label>
+          <div className="md:col-span-2">
+            <div className="mb-2 text-xs text-emerald-700">Perfil de acesso: {user.role_key}</div>
+            <button
+              type="submit"
+              disabled={saving}
+              className="rounded-xl bg-emerald-800 px-4 py-2 text-white disabled:opacity-60"
+            >
+              {saving ? "Salvando…" : "Salvar perfil"}
+            </button>
+          </div>
+        </form>
       </section>
 
       <section className="rounded-2xl border border-emerald-200 bg-white/70 p-5 space-y-3">
@@ -90,13 +244,41 @@ export default function SettingsPage({ user }: Props) {
         )}
       </section>
 
-      <section className="rounded-2xl border border-dashed border-emerald-300 bg-emerald-50/40 p-5 text-sm text-emerald-900 space-y-2">
-        <h2 className="font-semibold">Backup</h2>
+      <section className="rounded-2xl border border-dashed border-emerald-300 bg-emerald-50/40 p-5 text-sm text-emerald-900 space-y-3">
+        <h2 className="font-semibold">Backup local (JSON)</h2>
         <p>
-          Os dados clínicos e operacionais residem no PostgreSQL da organização. Exportações pontuais
-          (documentos TXT/HTML) estão em Documentos. Backup completo automatizado segue no roadmap —
-          sem cópia para Google Drive/Sheets.
+          Exporte um pacote operacional (perfil, pacientes, agenda do mês, cobranças, despesas,
+          tarefas e documentos) para arquivo JSON neste dispositivo. Não envia nada ao Google
+          Drive/Sheets.
         </p>
+        <button
+          className="rounded-xl bg-emerald-800 px-4 py-2 text-white disabled:opacity-60"
+          disabled={exporting}
+          onClick={async () => {
+            setExporting(true);
+            setError(null);
+            try {
+              const payload = await buildLocalBackupExport();
+              const blob = new Blob([JSON.stringify(payload, null, 2)], {
+                type: "application/json",
+              });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              const stamp = new Date().toISOString().slice(0, 10);
+              a.href = url;
+              a.download = `serenapsi-backup-${stamp}.json`;
+              a.click();
+              URL.revokeObjectURL(url);
+              setHint("Backup JSON baixado.");
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "Falha ao exportar backup");
+            } finally {
+              setExporting(false);
+            }
+          }}
+        >
+          {exporting ? "Exportando…" : "Baixar backup JSON"}
+        </button>
       </section>
     </div>
   );

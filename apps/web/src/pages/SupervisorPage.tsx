@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { getPatients, runSupervisor, type Patient } from "../lib/workspace";
 
-export default function SupervisorPage() {
+type Props = { initialPatientId?: string };
+
+export default function SupervisorPage({ initialPatientId }: Props) {
   const [patients, setPatients] = useState<Patient[]>([]);
-  const [patientId, setPatientId] = useState("");
+  const [patientId, setPatientId] = useState(initialPatientId || "");
   const [mode, setMode] = useState("prepare_session");
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -13,9 +15,13 @@ export default function SupervisorPage() {
     void (async () => {
       const items = await getPatients();
       setPatients(items);
-      if (items[0]) setPatientId(items[0].id);
+      if (initialPatientId && items.some((p) => p.id === initialPatientId)) {
+        setPatientId(initialPatientId);
+      } else if (!patientId && items[0]) {
+        setPatientId(items[0].id);
+      }
     })();
-  }, []);
+  }, [initialPatientId]);
 
   return (
     <div className="animate-fade-in space-y-6">

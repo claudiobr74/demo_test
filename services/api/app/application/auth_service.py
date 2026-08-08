@@ -155,6 +155,103 @@ class AuthService:
         )
         return {"access_token": access, "refresh_token": refresh, "token_type": "bearer"}
 
+    def _user_dto(self, user: User) -> dict:
+        return {
+            "id": str(user.id),
+            "email": user.email,
+            "full_name": user.full_name,
+            "preferred_name": user.preferred_name,
+            "professional_registration": user.professional_registration,
+            "specialty": user.specialty,
+            "default_framework": user.default_framework,
+        }
+
+    def _org_dto(self, org: Organization) -> dict:
+        settings = org.settings or {}
+        return {
+            "id": str(org.id),
+            "name": org.name,
+            "slug": org.slug,
+            "kind": org.kind,
+            "timezone": org.timezone,
+            "locale": org.locale,
+            "settings": {
+                "monthly_goal": settings.get("monthly_goal"),
+                "pix_key": settings.get("pix_key"),
+                "onboarding_completed": settings.get("onboarding_completed"),
+            },
+        }
+
+    async def get_me(
+        self,
+        *,
+        user: User,
+        org: Organization,
+        membership: Membership,
+    ) -> dict:
+        return {
+            "user": self._user_dto(user),
+            "organization": self._org_dto(org),
+            "membership": {
+                "id": str(membership.id),
+                "role_key": membership.role_key,
+                "permissions": membership.permissions,
+            },
+        }
+
+    async def update_profile(
+        self,
+        *,
+        user: User,
+        org: Organization,
+        membership: Membership,
+        data: dict,
+    ) -> dict:
+        if data.get("full_name"):
+            user.full_name = str(data["full_name"]).strip()
+        if "preferred_name" in data:
+            preferred = data.get("preferred_name")
+            user.preferred_name = str(preferred).strip() if preferred else None
+        if "professional_registration" in data:
+            reg = data.get("professional_registration")
+            user.professional_registration = str(reg).strip() if reg else None
+        if "specialty" in data:
+            specialty = data.get("specialty")
+            user.specialty = str(specialty).strip() if specialty else None
+        if data.get("default_framework"):
+            user.default_framework = data["default_framework"]
+
+        can_manage_org = (
+            Permission.ORGANIZATION_MANAGE.value in (membership.permissions or [])
+            or membership.role_key == "owner"
+        )
+        if data.get("organization_name") and can_manage_org:
+            org.name = str(data["organization_name"]).strip()
+
+        if data.get("timezone"):
+            org.timezone = str(data["timezone"]).strip()
+
+        settings = dict(org.settings or {})
+        if "monthly_goal" in data and data["monthly_goal"] is not None:
+            settings["monthly_goal"] = str(data["monthly_goal"])
+        if "pix_key" in data:
+            pix = data.get("pix_key")
+            settings["pix_key"] = str(pix).strip() if pix else None
+        org.settings = settings
+
+        await write_audit(
+            self.db,
+            organization_id=org.id,
+            actor_user_id=user.id,
+            action="profile.updated",
+            resource_type="user",
+            resource_id=str(user.id),
+        )
+        await self.db.commit()
+        await self.db.refresh(user)
+        await self.db.refresh(org)
+        return await self.get_me(user=user, org=org, membership=membership)
+
 
 def permissions_for_role(role_key: str) -> list[str]:
     perms = ROLE_PERMISSIONS.get(role_key)
