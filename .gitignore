@@ -1,0 +1,68 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+.env
+.env.*
+!.env.example
+services/api/.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+.tox/
+.hypothesis/
+
+# Flutter / Dart
+apps/mobile/.dart_tool/
+apps/mobile/.packages
+apps/mobile/.pub-cache/
+apps/mobile/.pub/
+apps/mobile/build/
+apps/mobile/.flutter-plugins
+apps/mobile/.flutter-plugins-dependencies
+apps/mobile/.metadata
+**/*.iml
+**/ios/Pods/
+**/ios/.symlinks/
+**/android/.gradle/
+**/android/local.properties
+**/android/key.properties
+**/*.jks
+**/*.keystore
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Secrets & local
+*.pem
+*.key
+secrets/
+local/
+services/api/storage/
+
+# Logs & temp
+*.log
+tmp/
+temp/
+.cache/
+
+# Coverage / reports
+coverage/
+test-results/
+
+# Docker volumes
+pgdata/

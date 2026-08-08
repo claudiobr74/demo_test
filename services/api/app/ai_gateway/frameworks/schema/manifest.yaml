@@ -1,0 +1,21 @@
+schema:
+  id: schema
+  version: "1.0.0"
+  name: Terapia do Esquema
+  cycle: [situation, need, schema, mode, coping, consequence, maintenance]
+  constructs:
+    - emotional_needs
+    - early_experiences
+    - schemas
+    - triggers
+    - coping_styles
+    - modes
+    - limited_reparenting
+  supervision_rules:
+    - Separate schema, mode and coping clearly
+    - Track unmet emotional needs
+    - Never silently mix incompatible theoretical languages
+  quality_checks:
+    - mode_linked_to_schema
+    - coping_style_identified
+    - relational_context_considered

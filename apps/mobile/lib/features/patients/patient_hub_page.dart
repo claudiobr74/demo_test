@@ -1,0 +1,930 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
+import '../../core/network/api_client.dart';
+import '../../core/theme/serena_theme.dart';
+import '../../shared/widgets/serena_section.dart';
+
+final patientProvider =
+    FutureProvider.autoDispose.family<Map<String, dynamic>, String>((ref, id) async {
+  final client = ref.watch(apiClientProvider);
+  return client.get('/api/v1/patients/$id');
+});
+
+final patientConsentsProvider =
+    FutureProvider.autoDispose.family<List<Map<String, dynamic>>, String>((ref, id) async {
+  final client = ref.watch(apiClientProvider);
+  final data = await client.get('/api/v1/consents/patients/$id');
+  return (data['items'] as List? ?? [])
+      .map((e) => Map<String, dynamic>.from(e as Map))
+      .toList();
+});
+
+final patientRecordsProvider =
+    FutureProvider.autoDispose.family<List<Map<String, dynamic>>, String>((ref, id) async {
+  final client = ref.watch(apiClientProvider);
+  final data = await client.get('/api/v1/clinical-records/patients/$id');
+  return (data['items'] as List? ?? [])
+      .map((e) => Map<String, dynamic>.from(e as Map))
+      .toList();
+});
+
+final patientMemoryProvider =
+    FutureProvider.autoDispose.family<List<Map<String, dynamic>>, String>((ref, id) async {
+  final client = ref.watch(apiClientProvider);
+  final data = await client.get('/api/v1/case-memory/patients/$id');
+  return (data['items'] as List? ?? [])
+      .map((e) => Map<String, dynamic>.from(e as Map))
+      .toList();
+});
+
+final patientHypothesesProvider =
+    FutureProvider.autoDispose.family<List<Map<String, dynamic>>, String>((ref, id) async {
+  final client = ref.watch(apiClientProvider);
+  final data = await client.get('/api/v1/hypotheses/patients/$id');
+  return (data['items'] as List? ?? [])
+      .map((e) => Map<String, dynamic>.from(e as Map))
+      .toList();
+});
+
+final patientAiHistoryProvider =
+    FutureProvider.autoDispose.family<List<Map<String, dynamic>>, String>((ref, id) async {
+  final client = ref.watch(apiClientProvider);
+  final data = await client.get('/api/v1/ai/history/patients/$id');
+  return (data['items'] as List? ?? [])
+      .map((e) => Map<String, dynamic>.from(e as Map))
+      .toList();
+});
+
+class PatientHubPage extends ConsumerWidget {
+  const PatientHubPage({super.key, required this.patientId});
+
+  final String patientId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final patient = ref.watch(patientProvider(patientId));
+    final consents = ref.watch(patientConsentsProvider(patientId));
+    final records = ref.watch(patientRecordsProvider(patientId));
+    final memory = ref.watch(patientMemoryProvider(patientId));
+    final hypotheses = ref.watch(patientHypothesesProvider(patientId));
+    final aiHistory = ref.watch(patientAiHistoryProvider(patientId));
+
+    return patient.when(
+      loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
+      error: (e, _) => Scaffold(
+        appBar: AppBar(title: const Text('Paciente')),
+        body: Center(child: Text(e.toString())),
+      ),
+      data: (data) {
+        final name = data['display_name'] as String? ?? 'Paciente';
+        return Scaffold(
+          appBar: AppBar(title: Text(name)),
+          body: ListView(
+            padding: const EdgeInsets.all(24),
+            children: [
+              Text(name, style: Theme.of(context).textTheme.headlineMedium),
+              const SizedBox(height: 6),
+              Text(
+                'Hub do paciente — jornada clínica e administrativa em um só lugar.',
+                style: Theme.of(context).textTheme.bodyLarge,
+              ),
+              const SizedBox(height: 24),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  FilledButton.icon(
+                    onPressed: () => context.push('/pacientes/$patientId/preparar'),
+                    icon: const Icon(Icons.auto_stories_outlined),
+                    label: const Text('Preparar sessão'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () => context.push('/pacientes/$patientId/formulacao'),
+                    icon: const Icon(Icons.account_tree_outlined),
+                    label: const Text('Formulação viva'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () => context.push('/pacientes/$patientId/plano'),
+                    icon: const Icon(Icons.flag_outlined),
+                    label: const Text('Plano terapêutico'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () => context.push('/sessoes/nova?patientId=$patientId'),
+                    icon: const Icon(Icons.play_arrow_outlined),
+                    label: const Text('Nova sessão'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () => context.push('/pacientes/$patientId/prontuario'),
+                    icon: const Icon(Icons.folder_open_outlined),
+                    label: const Text('Ver prontuário'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      try {
+                        final client = ref.read(apiClientProvider);
+                        final result = await client.post('/api/v1/supervisor/run', body: {
+                          'mode': 'prepare_session',
+                          'patient_id': patientId,
+                          'import_hypotheses': true,
+                        });
+                        ref.invalidate(patientAiHistoryProvider(patientId));
+                        ref.invalidate(patientHypothesesProvider(patientId));
+                        if (!context.mounted) return;
+                        await showModalBottomSheet<void>(
+                          context: context,
+                          showDragHandle: true,
+                          isScrollControlled: true,
+                          builder: (ctx) => _SupervisorSheet(result: result),
+                        );
+                      } catch (e) {
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(e.toString())),
+                        );
+                      }
+                    },
+                    icon: const Icon(Icons.psychology_outlined),
+                    label: const Text('Abrir Supervisor IA'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 28),
+              SerenaSection(
+                title: 'Cadastro',
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _kv(context, 'Modalidade', data['modality']?.toString()),
+                    _kv(context, 'Status', data['status']?.toString()),
+                    _kv(context, 'Abordagem', data['framework']?.toString()),
+                    _kv(context, 'Telefone', data['phone']?.toString()),
+                    _kv(context, 'E-mail', data['email']?.toString()),
+                    if (data['session_fee'] != null)
+                      _kv(context, 'Valor sessão', 'R\$ ${data['session_fee']}'),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+              SerenaSection(
+                title: 'Hipóteses clínicas',
+                child: hypotheses.when(
+                  loading: () => const LinearProgressIndicator(),
+                  error: (e, _) => Text(e.toString()),
+                  data: (items) => _HypothesesBlock(patientId: patientId, items: items),
+                ),
+              ),
+              const SizedBox(height: 20),
+              SerenaSection(
+                title: 'Memória do caso',
+                child: memory.when(
+                  loading: () => const LinearProgressIndicator(),
+                  error: (e, _) => Text(e.toString()),
+                  data: (items) => _CaseMemoryBlock(patientId: patientId, items: items),
+                ),
+              ),
+              const SizedBox(height: 20),
+              SerenaSection(
+                title: 'Histórico do Supervisor',
+                child: aiHistory.when(
+                  loading: () => const LinearProgressIndicator(),
+                  error: (e, _) => Text(e.toString()),
+                  data: (items) {
+                    if (items.isEmpty) {
+                      return Text(
+                        'Nenhuma execução registrada ainda.',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      );
+                    }
+                    return Column(
+                      children: [
+                        for (final h in items.take(5))
+                          ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(h['task'] as String? ?? ''),
+                            subtitle: Text(
+                              [
+                                h['provider'] ?? '',
+                                if (h['latency_ms'] != null) '${h['latency_ms']} ms',
+                                h['summary_message'] ?? '',
+                              ].where((e) => e.toString().isNotEmpty).join(' · '),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            trailing: h['output_id'] != null
+                                ? IconButton(
+                                    tooltip: 'Útil',
+                                    icon: const Icon(Icons.thumb_up_outlined, size: 18),
+                                    onPressed: () async {
+                                      await ref.read(apiClientProvider).post(
+                                        '/api/v1/ai/feedback',
+                                        body: {
+                                          'output_id': h['output_id'],
+                                          'useful': true,
+                                        },
+                                      );
+                                      if (!context.mounted) return;
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(content: Text('Feedback registrado.')),
+                                      );
+                                    },
+                                  )
+                                : null,
+                          ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 20),
+              SerenaSection(
+                title: 'Prontuário recente',
+                child: records.when(
+                  loading: () => const LinearProgressIndicator(),
+                  error: (e, _) => Text(e.toString()),
+                  data: (items) {
+                    if (items.isEmpty) {
+                      return Text(
+                        'Nenhum registro clínico ainda.',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      );
+                    }
+                    return Column(
+                      children: [
+                        for (final r in items.take(5))
+                          ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(r['focus'] as String? ?? 'Sessão'),
+                            subtitle: Text(r['evolution_preview'] as String? ?? ''),
+                            trailing: Text((r['recorded_at'] as String? ?? '').split('T').first),
+                          ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 20),
+              SerenaSection(
+                title: 'Consentimentos',
+                child: consents.when(
+                  loading: () => const LinearProgressIndicator(),
+                  error: (e, _) => Text(e.toString()),
+                  data: (items) => _ConsentsBlock(patientId: patientId, items: items),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _kv(BuildContext context, String k, String? v) {
+    if (v == null || v.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          SizedBox(width: 120, child: Text(k, style: Theme.of(context).textTheme.bodyMedium)),
+          Expanded(child: Text(v, style: Theme.of(context).textTheme.titleSmall)),
+        ],
+      ),
+    );
+  }
+}
+
+class _HypothesesBlock extends ConsumerWidget {
+  const _HypothesesBlock({required this.patientId, required this.items});
+  final String patientId;
+  final List<Map<String, dynamic>> items;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (items.isEmpty)
+          Text(
+            'Nenhuma hipótese clínica ainda. O Supervisor pode sugerir — você decide.',
+            style: Theme.of(context).textTheme.bodyMedium,
+          )
+        else
+          for (final h in items.take(8))
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(h['statement'] as String? ?? ''),
+                        Text(
+                          _strength(h['strength'] as String?) +
+                              (h['pending_review'] == true ? ' · aguardando aceite' : '') +
+                              (h['formulation_id'] != null ? ' · ligada à formulação' : ''),
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: SerenaColors.inkSoft,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (h['pending_review'] == true)
+                    TextButton(
+                      onPressed: () async {
+                        await ref.read(apiClientProvider).post(
+                          '/api/v1/hypotheses/${h['id']}/accept',
+                        );
+                        ref.invalidate(patientHypothesesProvider(patientId));
+                      },
+                      child: const Text('Aceitar'),
+                    )
+                  else if (h['strength'] == 'active')
+                    TextButton(
+                      onPressed: () async {
+                        await ref.read(apiClientProvider).post(
+                          '/api/v1/hypotheses/${h['id']}/strength',
+                          body: {'strength': 'strengthened'},
+                        );
+                        ref.invalidate(patientHypothesesProvider(patientId));
+                      },
+                      child: const Text('Fortalecer'),
+                    ),
+                ],
+              ),
+            ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: () => _add(context, ref),
+          icon: const Icon(Icons.add),
+          label: const Text('Nova hipótese'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _add(BuildContext context, WidgetRef ref) async {
+    final ctrl = TextEditingController();
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) {
+        final bottom = MediaQuery.viewInsetsOf(ctx).bottom;
+        return Padding(
+          padding: EdgeInsets.fromLTRB(24, 8, 24, 24 + bottom),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Nova hipótese', style: Theme.of(ctx).textTheme.headlineMedium),
+              const SizedBox(height: 12),
+              TextField(
+                controller: ctrl,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'Enunciado',
+                  alignLabelWithHint: true,
+                ),
+              ),
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Salvar'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (ok != true || ctrl.text.trim().isEmpty) return;
+    await ref.read(apiClientProvider).post(
+      '/api/v1/hypotheses/patients/$patientId',
+      body: {'statement': ctrl.text.trim()},
+    );
+    ref.invalidate(patientHypothesesProvider(patientId));
+  }
+
+  String _strength(String? s) => switch (s) {
+        'strengthened' => 'Fortalecida',
+        'weakened' => 'Enfraquecida',
+        'retired' => 'Aposentada',
+        _ => 'Ativa',
+      };
+}
+
+class _CaseMemoryBlock extends ConsumerWidget {
+  const _CaseMemoryBlock({required this.patientId, required this.items});
+  final String patientId;
+  final List<Map<String, dynamic>> items;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (items.isEmpty)
+          Text(
+            'Nenhuma memória registrada. Fatos e hipóteses ficam aqui — a IA só sugere.',
+            style: Theme.of(context).textTheme.bodyMedium,
+          )
+        else
+          for (final m in items.take(8))
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _kindLabel(m['kind'] as String?),
+                          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                                color: SerenaColors.sageDark,
+                              ),
+                        ),
+                        Text(m['content'] as String? ?? ''),
+                        if ((m['provenance'] as List? ?? []).isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Wrap(
+                              spacing: 6,
+                              runSpacing: 4,
+                              children: [
+                                for (final raw in (m['provenance'] as List).take(4))
+                                  _ProvenanceChip(
+                                    item: Map<String, dynamic>.from(raw as Map),
+                                    typeLabel: _provType,
+                                  ),
+                              ],
+                            ),
+                          ),
+                        if (m['pending_review'] == true)
+                          Text(
+                            'Sugestão da IA — aguardando aceite',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: SerenaColors.inkSoft,
+                                ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  if (m['pending_review'] == true)
+                    TextButton(
+                      onPressed: () async {
+                        await ref.read(apiClientProvider).post(
+                          '/api/v1/case-memory/${m['id']}/accept',
+                        );
+                        ref.invalidate(patientMemoryProvider(patientId));
+                      },
+                      child: const Text('Aceitar'),
+                    )
+                  else
+                    IconButton(
+                      tooltip: 'Vincular fonte',
+                      onPressed: () => _addProvenance(context, ref, m['id'] as String),
+                      icon: const Icon(Icons.link, size: 20),
+                    ),
+                ],
+              ),
+            ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: () => _addMemory(context, ref),
+          icon: const Icon(Icons.add),
+          label: const Text('Adicionar memória'),
+        ),
+      ],
+    );
+  }
+
+  String _provType(String? t) => switch (t) {
+        'session' => 'Sessão',
+        'clinical_record' => 'Prontuário',
+        'formulation' => 'Formulação',
+        'appointment' => 'Agenda',
+        'professional_note' => 'Nota',
+        'external_report' => 'Laudo',
+        _ => t ?? 'Fonte',
+      };
+
+  Future<void> _addProvenance(BuildContext context, WidgetRef ref, String entryId) async {
+    final noteCtrl = TextEditingController();
+    var type = 'professional_note';
+    String? resourceId;
+    List<Map<String, dynamic>> sessions = [];
+    List<Map<String, dynamic>> records = [];
+    try {
+      final sess = await ref.read(apiClientProvider).get(
+            '/api/v1/sessions?patient_id=$patientId&limit=12',
+          );
+      sessions = (sess['items'] as List? ?? [])
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+      final rec = await ref.read(apiClientProvider).get(
+            '/api/v1/clinical-records/patients/$patientId',
+          );
+      records = (rec['items'] as List? ?? [])
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+    } catch (_) {}
+
+    if (!context.mounted) return;
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setLocal) {
+            final bottom = MediaQuery.viewInsetsOf(ctx).bottom;
+            return Padding(
+              padding: EdgeInsets.fromLTRB(24, 8, 24, 24 + bottom),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text('Vincular fonte', style: Theme.of(ctx).textTheme.headlineMedium),
+                    const SizedBox(height: 8),
+                    Text(
+                      'A proveniência liga a memória à sessão ou prontuário de origem.',
+                      style: Theme.of(ctx).textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      value: type,
+                      items: const [
+                        DropdownMenuItem(value: 'session', child: Text('Sessão')),
+                        DropdownMenuItem(value: 'clinical_record', child: Text('Prontuário')),
+                        DropdownMenuItem(value: 'formulation', child: Text('Formulação')),
+                        DropdownMenuItem(value: 'professional_note', child: Text('Nota profissional')),
+                        DropdownMenuItem(value: 'external_report', child: Text('Laudo / externo')),
+                      ],
+                      onChanged: (v) => setLocal(() {
+                        type = v ?? 'professional_note';
+                        resourceId = null;
+                      }),
+                      decoration: const InputDecoration(labelText: 'Tipo de fonte'),
+                    ),
+                    if (type == 'session' && sessions.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        value: resourceId,
+                        items: [
+                          for (final s in sessions)
+                            DropdownMenuItem(
+                              value: s['id'] as String,
+                              child: Text(
+                                (s['started_at'] as String? ?? s['id'] as String)
+                                    .replaceFirst('T', ' ')
+                                    .split('.')
+                                    .first,
+                              ),
+                            ),
+                        ],
+                        onChanged: (v) => setLocal(() => resourceId = v),
+                        decoration: const InputDecoration(labelText: 'Sessão de origem'),
+                      ),
+                    ],
+                    if (type == 'clinical_record' && records.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        value: resourceId,
+                        items: [
+                          for (final r in records)
+                            DropdownMenuItem(
+                              value: r['id'] as String,
+                              child: Text(
+                                (r['recorded_at'] as String? ?? r['focus'] as String? ?? r['id'] as String)
+                                    .replaceFirst('T', ' ')
+                                    .split('.')
+                                    .first,
+                              ),
+                            ),
+                        ],
+                        onChanged: (v) => setLocal(() => resourceId = v),
+                        decoration: const InputDecoration(labelText: 'Registro de origem'),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: noteCtrl,
+                      decoration: const InputDecoration(labelText: 'Nota (opcional)'),
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      child: const Text('Vincular'),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+    if (ok != true) return;
+    await ref.read(apiClientProvider).post(
+      '/api/v1/case-memory/$entryId/provenance',
+      body: {
+        'resource_type': type,
+        if (resourceId != null) 'resource_id': resourceId,
+        if (noteCtrl.text.trim().isNotEmpty) 'note': noteCtrl.text.trim(),
+      },
+    );
+    ref.invalidate(patientMemoryProvider(patientId));
+  }
+
+  Future<void> _addMemory(BuildContext context, WidgetRef ref) async {
+    final contentCtrl = TextEditingController();
+    final noteCtrl = TextEditingController();
+    var kind = 'observation';
+    var provType = 'professional_note';
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setLocal) {
+            final bottom = MediaQuery.viewInsetsOf(ctx).bottom;
+            return Padding(
+              padding: EdgeInsets.fromLTRB(24, 8, 24, 24 + bottom),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text('Nova memória', style: Theme.of(ctx).textTheme.headlineMedium),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: kind,
+                    items: const [
+                      DropdownMenuItem(value: 'fact', child: Text('Fato')),
+                      DropdownMenuItem(value: 'observation', child: Text('Observação')),
+                      DropdownMenuItem(value: 'hypothesis', child: Text('Hipótese')),
+                    ],
+                    onChanged: (v) => setLocal(() => kind = v ?? 'observation'),
+                    decoration: const InputDecoration(labelText: 'Tipo'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: contentCtrl,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      labelText: 'Conteúdo',
+                      alignLabelWithHint: true,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: provType,
+                    items: const [
+                      DropdownMenuItem(value: 'professional_note', child: Text('Nota profissional')),
+                      DropdownMenuItem(value: 'session', child: Text('Sessão')),
+                      DropdownMenuItem(value: 'formulation', child: Text('Formulação')),
+                      DropdownMenuItem(value: 'clinical_record', child: Text('Prontuário')),
+                    ],
+                    onChanged: (v) => setLocal(() => provType = v ?? 'professional_note'),
+                    decoration: const InputDecoration(labelText: 'Fonte'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: noteCtrl,
+                    decoration: const InputDecoration(labelText: 'Detalhe da fonte (opcional)'),
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: const Text('Salvar'),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+    if (ok != true || contentCtrl.text.trim().isEmpty) return;
+    await ref.read(apiClientProvider).post(
+      '/api/v1/case-memory/patients/$patientId',
+      body: {
+        'kind': kind,
+        'content': contentCtrl.text.trim(),
+        'provenance': [
+          {
+            'resource_type': provType,
+            if (noteCtrl.text.trim().isNotEmpty) 'note': noteCtrl.text.trim(),
+          },
+        ],
+      },
+    );
+    ref.invalidate(patientMemoryProvider(patientId));
+  }
+
+  String _kindLabel(String? k) => switch (k) {
+        'fact' => 'Fato',
+        'hypothesis' => 'Hipótese',
+        _ => 'Observação',
+      };
+}
+
+class _ProvenanceChip extends StatelessWidget {
+  const _ProvenanceChip({required this.item, required this.typeLabel});
+
+  final Map<String, dynamic> item;
+  final String Function(String?) typeLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final type = typeLabel(item['resource_type'] as String?);
+    final note = item['note'] as String?;
+    final link = item['deep_link'] as String?;
+    final label = note != null && note.isNotEmpty ? '$type · $note' : type;
+    final child = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: SerenaColors.offWhite,
+        borderRadius: BorderRadius.circular(SerenaRadius.sm),
+        border: Border.all(color: SerenaColors.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            link != null ? Icons.link : Icons.info_outline,
+            size: 14,
+            color: SerenaColors.sageDark,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: SerenaColors.inkSoft,
+                ),
+          ),
+        ],
+      ),
+    );
+    if (link == null || link.isEmpty) return child;
+    return InkWell(
+      onTap: () => context.push(link),
+      borderRadius: BorderRadius.circular(SerenaRadius.sm),
+      child: child,
+    );
+  }
+}
+
+class _ConsentsBlock extends ConsumerWidget {
+  const _ConsentsBlock({required this.patientId, required this.items});
+  final String patientId;
+  final List<Map<String, dynamic>> items;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (items.isEmpty)
+          Text(
+            'Nenhum consentimento registrado.',
+            style: Theme.of(context).textTheme.bodyMedium,
+          )
+        else
+          for (final c in items)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${_typeLabel(c['consent_type'] as String?)} · v${c['version']}',
+                          style: Theme.of(context).textTheme.titleSmall,
+                        ),
+                        Text(_statusLabel(c['status'] as String?)),
+                      ],
+                    ),
+                  ),
+                  if (c['status'] == 'pending') ...[
+                    TextButton(
+                      onPressed: () => _decide(ref, c['id'] as String, 'accepted'),
+                      child: const Text('Aceitar'),
+                    ),
+                    TextButton(
+                      onPressed: () => _decide(ref, c['id'] as String, 'refused'),
+                      child: const Text('Recusar'),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: () async {
+            final type = await showModalBottomSheet<String>(
+              context: context,
+              showDragHandle: true,
+              builder: (ctx) => SafeArea(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final t in const [
+                      ('data_processing', 'Tratamento de dados'),
+                      ('digital_resources', 'Recursos digitais'),
+                      ('transcription', 'Transcrição'),
+                      ('ai_processing', 'Processamento por IA'),
+                    ])
+                      ListTile(
+                        title: Text(t.$2),
+                        onTap: () => Navigator.pop(ctx, t.$1),
+                      ),
+                  ],
+                ),
+              ),
+            );
+            if (type == null) return;
+            await ref.read(apiClientProvider).post(
+              '/api/v1/consents/patients/$patientId',
+              body: {'consent_type': type},
+            );
+            ref.invalidate(patientConsentsProvider(patientId));
+          },
+          icon: const Icon(Icons.add),
+          label: const Text('Solicitar consentimento'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _decide(WidgetRef ref, String id, String status) async {
+    await ref.read(apiClientProvider).post(
+      '/api/v1/consents/$id/decision',
+      body: {'status': status, 'method': 'manual'},
+    );
+    ref.invalidate(patientConsentsProvider(patientId));
+  }
+
+  String _typeLabel(String? t) => switch (t) {
+        'data_processing' => 'Tratamento de dados',
+        'digital_resources' => 'Recursos digitais',
+        'transcription' => 'Transcrição',
+        'ai_processing' => 'IA',
+        'telehealth' => 'Teleatendimento',
+        _ => t ?? 'Consentimento',
+      };
+
+  String _statusLabel(String? s) => switch (s) {
+        'accepted' => 'Aceito',
+        'refused' => 'Recusado',
+        'revoked' => 'Revogado',
+        'expired' => 'Expirado',
+        _ => 'Pendente',
+      };
+}
+
+class _SupervisorSheet extends StatelessWidget {
+  const _SupervisorSheet({required this.result});
+  final Map<String, dynamic> result;
+
+  @override
+  Widget build(BuildContext context) {
+    final summary = result['summary'] as Map? ?? {};
+    final questions = (result['questions'] as List? ?? []).cast<dynamic>();
+    final focus = (result['suggested_focus'] as List? ?? []).cast<dynamic>();
+    final note = result['epistemology_note'] as String? ?? '';
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Supervisor IA', style: Theme.of(context).textTheme.headlineMedium),
+            const SizedBox(height: 8),
+            Text(summary['message']?.toString() ?? note),
+            const SizedBox(height: 16),
+            Text('Foco sugerido', style: Theme.of(context).textTheme.titleMedium),
+            for (final f in focus) Text('• $f'),
+            const SizedBox(height: 12),
+            Text('Perguntas para reflexão', style: Theme.of(context).textTheme.titleMedium),
+            for (final q in questions) Text('• $q'),
+            const SizedBox(height: 16),
+            Text(
+              note,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: SerenaColors.inkSoft),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
