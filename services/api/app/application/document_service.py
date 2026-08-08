@@ -31,6 +31,29 @@ DEFAULT_TEMPLATES = [
         ["patient_name", "date", "duration", "professional_name", "clinic_name"],
     ),
     (
+        "sick_leave",
+        "Atestado psicológico",
+        (
+            "Atesto, para os devidos fins, que {{patient_name}} esteve sob meus cuidados "
+            "profissionais em {{date}}, necessitando de afastamento de suas atividades "
+            "pelo período de {{days}} dia(s), a contar desta data.\n\n"
+            "CID (se aplicável e autorizado): {{cid}}\n\n"
+            "{{professional_name}}\nCRP: {{crp}}\n{{clinic_name}}"
+        ),
+        ["patient_name", "date", "days", "cid", "professional_name", "crp", "clinic_name"],
+    ),
+    (
+        "referral",
+        "Encaminhamento",
+        (
+            "Encaminho {{patient_name}} para avaliação/acompanhamento junto a "
+            "{{destination}}, em {{date}}.\n\n"
+            "Motivo do encaminhamento:\n{{reason}}\n\n"
+            "{{professional_name}}\n{{clinic_name}}"
+        ),
+        ["patient_name", "destination", "date", "reason", "professional_name", "clinic_name"],
+    ),
+    (
         "receipt",
         "Recibo de sessão",
         (
@@ -73,14 +96,22 @@ class DocumentService:
         return [self._template_dto(t) for t in rows]
 
     async def ensure_default_templates(self) -> None:
-        existing = await self.db.scalar(
-            select(DocumentTemplate.id).where(
-                DocumentTemplate.organization_id == self.auth.organization_id
-            ).limit(1)
+        """Upsert missing default templates so new clinic docs appear in existing orgs."""
+        existing_types = set(
+            (
+                await self.db.execute(
+                    select(DocumentTemplate.doc_type).where(
+                        DocumentTemplate.organization_id == self.auth.organization_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
         )
-        if existing:
-            return
+        added = False
         for doc_type, name, body, variables in DEFAULT_TEMPLATES:
+            if doc_type in existing_types:
+                continue
             self.db.add(
                 DocumentTemplate(
                     organization_id=self.auth.organization_id,
@@ -91,7 +122,9 @@ class DocumentService:
                     is_active=True,
                 )
             )
-        await self.db.commit()
+            added = True
+        if added:
+            await self.db.commit()
 
     async def list_documents(
         self,

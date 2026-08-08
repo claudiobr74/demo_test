@@ -76,7 +76,10 @@ async def test_document_from_template(client: AsyncClient):
     templates = await client.get("/api/v1/documents/templates", headers=headers)
     assert templates.status_code == 200, templates.text
     items = templates.json()["items"]
-    assert len(items) >= 3
+    assert len(items) >= 5
+    types = {t["doc_type"] for t in items}
+    assert "sick_leave" in types
+    assert "referral" in types
     template_id = items[0]["id"]
 
     created = await client.post(

@@ -349,11 +349,35 @@ export async function decideConsent(consentId: string, status: "accepted" | "ref
   });
 }
 
-export async function getClinicalRecords(patientId: string) {
-  const data = await apiJson<{ items: Record<string, unknown>[] }>(
+export interface ClinicalRecordSummary {
+  id: string;
+  patient_id?: string;
+  session_id?: string | null;
+  recorded_at?: string;
+  focus?: string | null;
+  status?: string;
+  evolution_preview?: string | null;
+}
+
+export interface ClinicalRecordDetail extends ClinicalRecordSummary {
+  evolution?: string | null;
+  interventions?: string | null;
+  relevant_observations?: string | null;
+  tasks?: string | null;
+  planning?: string | null;
+  finalized_at?: string | null;
+  session_type?: string | null;
+}
+
+export async function getClinicalRecords(patientId: string): Promise<ClinicalRecordSummary[]> {
+  const data = await apiJson<{ items: ClinicalRecordSummary[] }>(
     `/api/v1/clinical-records/patients/${patientId}`,
   );
   return data.items || [];
+}
+
+export async function getClinicalRecord(recordId: string): Promise<ClinicalRecordDetail> {
+  return apiJson<ClinicalRecordDetail>(`/api/v1/clinical-records/${recordId}`);
 }
 
 export async function getDocumentTemplates(): Promise<DocTemplate[]> {
@@ -418,7 +442,7 @@ export async function getConfirmationQueue(): Promise<ConfirmationQueueItem[]> {
 
 export async function markConfirmationStatus(
   notificationId: string,
-  status: "copied" | "sent" | "dismissed",
+  status: "copied" | "sent" | "dismissed" | "patient_confirmed",
 ) {
   return apiJson(`/api/v1/confirmations/queue/${notificationId}/status`, {
     method: "POST",

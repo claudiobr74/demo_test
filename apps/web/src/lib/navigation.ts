@@ -3,7 +3,12 @@ import type { TabId } from "../components/Sidebar";
 export type NavTarget =
   | { type: "tab"; tab: TabId }
   | { type: "session"; sessionId: string }
-  | { type: "patient"; patientId: string; focus?: "prontuario" | "formulacao" | "hub" };
+  | {
+      type: "patient";
+      patientId: string;
+      focus?: "prontuario" | "formulacao" | "hub";
+      recordId?: string;
+    };
 
 const TAB_PATHS: Record<string, TabId> = {
   "/meudia": "meudia",
@@ -29,6 +34,16 @@ export function parseDeepLink(link: string | null | undefined): NavTarget | null
   const sessionMatch = path.match(/^\/sessoes\/([^/]+)\/?$/);
   if (sessionMatch) return { type: "session", sessionId: sessionMatch[1] };
 
+  const recordMatch = path.match(/^\/pacientes\/([^/]+)\/prontuario\/([^/]+)\/?$/);
+  if (recordMatch) {
+    return {
+      type: "patient",
+      patientId: recordMatch[1],
+      focus: "prontuario",
+      recordId: recordMatch[2],
+    };
+  }
+
   const patientFocus = path.match(/^\/pacientes\/([^/]+)\/(prontuario|formulacao)\/?$/);
   if (patientFocus) {
     return {
@@ -52,6 +67,9 @@ export function toHash(target: NavTarget): string {
     case "session":
       return `#/sessoes/${target.sessionId}`;
     case "patient":
+      if (target.recordId) {
+        return `#/pacientes/${target.patientId}/prontuario/${target.recordId}`;
+      }
       return target.focus && target.focus !== "hub"
         ? `#/pacientes/${target.patientId}/${target.focus}`
         : `#/pacientes/${target.patientId}`;
@@ -65,7 +83,6 @@ export function navigateDeepLink(link: string | null | undefined): boolean {
   if (!target) return false;
   const hash = toHash(target);
   window.location.hash = hash.startsWith("#") ? hash.slice(1) : hash;
-  // hashchange may not fire if identical — callers should also apply target.
   return true;
 }
 

@@ -10,6 +10,8 @@ type Props = {
   title?: string;
 };
 
+const CLOSED = new Set(["dismissed", "patient_confirmed"]);
+
 /** Inbox operacional da fila de confirmação — cópia/envio manual (sem Gmail). */
 export default function ConfirmationQueuePanel({
   refreshKey = 0,
@@ -34,14 +36,15 @@ export default function ConfirmationQueuePanel({
 
   if (error) return <p className="text-sm text-red-700">{error}</p>;
 
-  const open = items.filter((i) => i.status !== "sent" && i.status !== "dismissed");
+  const open = items.filter((i) => !CLOSED.has(String(i.status || "")));
   const shown = (open.length ? open : items).slice(0, 8);
 
   return (
     <section className="space-y-3 rounded-2xl border border-emerald-200 bg-white/70 p-4">
       <h2 className="text-sm font-semibold uppercase tracking-wide text-emerald-700">{title}</h2>
       <p className="text-xs text-emerald-800/70">
-        Fluxo real do consultório: copiar → enviar no WhatsApp/SMS → marcar enviado. Sem Gmail/Google.
+        Fluxo real: copiar → enviar no WhatsApp/SMS → marcar enviado → paciente confirmou. Sem
+        Gmail/Google.
       </p>
       {hint && <p className="rounded-xl bg-emerald-100 px-3 py-2 text-sm">{hint}</p>}
       {shown.length === 0 ? (
@@ -81,12 +84,24 @@ export default function ConfirmationQueuePanel({
                 className="rounded-lg bg-emerald-800 px-3 py-1.5 text-xs text-white"
                 onClick={async () => {
                   await markConfirmationStatus(item.id, "sent");
-                  setHint("Marcado como enviado. Aguardando resposta da paciente.");
+                  setHint("Marcado como enviado. Quando a paciente responder, confirme abaixo.");
                   await load();
                 }}
               >
                 Marcar enviado
               </button>
+              {(item.status === "sent" || item.status === "copied" || item.appointment_id) && (
+                <button
+                  className="rounded-lg border border-emerald-700 px-3 py-1.5 text-xs text-emerald-900"
+                  onClick={async () => {
+                    await markConfirmationStatus(item.id, "patient_confirmed");
+                    setHint("Atendimento marcado como confirmado pela paciente.");
+                    await load();
+                  }}
+                >
+                  Paciente confirmou
+                </button>
+              )}
               <button
                 className="rounded-lg border px-3 py-1.5 text-xs text-emerald-800/80"
                 onClick={async () => {

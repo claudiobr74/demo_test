@@ -174,5 +174,18 @@ async def test_confirmation_queue(client: AsyncClient):
     assert sent.json()["delivery"] == "manual_sent"
 
     appt_after = await client.get(f"/api/v1/appointments/{aid}", headers=headers)
-    if appt_after.status_code == 200:
-        assert appt_after.json().get("confirmation_status") == "sent"
+    assert appt_after.status_code == 200
+    assert appt_after.json().get("confirmation_status") == "sent"
+
+    confirmed = await client.post(
+        f"/api/v1/confirmations/queue/{nid}/status",
+        headers=headers,
+        json={"status": "patient_confirmed"},
+    )
+    assert confirmed.status_code == 200
+    assert confirmed.json()["status"] == "patient_confirmed"
+
+    appt_confirmed = await client.get(f"/api/v1/appointments/{aid}", headers=headers)
+    assert appt_confirmed.status_code == 200
+    assert appt_confirmed.json()["status"] == "confirmed"
+    assert appt_confirmed.json()["confirmation_status"] == "confirmed"

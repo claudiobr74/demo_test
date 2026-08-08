@@ -34,6 +34,7 @@ export default function App() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [patientId, setPatientId] = useState<string | null>(null);
   const [hubFocus, setHubFocus] = useState<"prontuario" | "formulacao" | "hub" | undefined>();
+  const [hubRecordId, setHubRecordId] = useState<string | null>(null);
   const [supervisorPatientId, setSupervisorPatientId] = useState<string | null>(null);
   const [email, setEmail] = useState("dra.marina@serenapsi.dev");
   const [password, setPassword] = useState("SerenaPsi!dev1");
@@ -51,12 +52,14 @@ export default function App() {
       setSessionId(null);
       setPatientId(target.patientId);
       setHubFocus(target.focus || "hub");
+      setHubRecordId(target.recordId || null);
       setTab("pacientes");
       return;
     }
     setSessionId(null);
     setPatientId(null);
     setHubFocus(undefined);
+    setHubRecordId(null);
     setTab(target.tab);
   };
 
@@ -185,14 +188,17 @@ export default function App() {
           patientId={patientId}
           clinicalAccess={canAccessClinical(user.role_key, user.permissions || [])}
           initialFocus={hubFocus}
+          initialRecordId={hubRecordId || undefined}
           onClose={() => {
             setPatientId(null);
             setHubFocus(undefined);
+            setHubRecordId(null);
             window.location.hash = "pacientes";
           }}
           onOpenSession={(id) => {
             setPatientId(null);
             setHubFocus(undefined);
+            setHubRecordId(null);
             setSessionId(id);
             window.location.hash = `sessoes/${id}`;
           }}

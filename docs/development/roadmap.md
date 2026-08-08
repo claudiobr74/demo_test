@@ -52,6 +52,9 @@
 - STT real via Serena AI Gateway (OpenAI Whisper / Gemini multimodal; fallback offline) (feito)
 - Fila de confirmações operável: copiar → marcar enviado/dispensar (feito; providers externos depois)
 - PDF binário de documentos (fpdf2) + `object_key` local (feito)
+- Hub: leitura do prontuário CFP (detalhe somente leitura + deep-link) (feito)
+- Fila: paciente confirmou → status do atendimento (feito)
+- Templates: atestado psicológico + encaminhamento (upsert em orgs existentes) (feito)
 
 ### P2/P3 restante
 - Providers reais WhatsApp/SMS/email (fila + fluxo manual já cobrem o consultório sem Gmail)

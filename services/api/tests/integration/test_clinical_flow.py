@@ -97,6 +97,17 @@ async def test_session_autosave_and_close_creates_record(client: AsyncClient):
     records = await client.get(f"/api/v1/clinical-records/patients/{pid}", headers=headers)
     assert records.status_code == 200
     assert records.json()["items"]
+    item = records.json()["items"][0]
+    assert item.get("evolution_preview")
+    assert "evolution" not in item  # list is preview-only
+
+    detail = await client.get(f"/api/v1/clinical-records/{item['id']}", headers=headers)
+    assert detail.status_code == 200, detail.text
+    body = detail.json()
+    assert body["focus"] == "Ansiedade social"
+    assert body["evolution"] == "Evolução breve"
+    assert "interventions" in body
+    assert "planning" in body
 
 
 @pytest.mark.asyncio

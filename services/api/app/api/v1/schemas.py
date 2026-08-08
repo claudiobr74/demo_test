@@ -236,7 +236,7 @@ class ConfirmationEnqueueRequest(APIModel):
 
 
 class ConfirmationStatusRequest(APIModel):
-    status: str = Field(pattern="^(copied|sent|dismissed)$")
+    status: str = Field(pattern="^(copied|sent|dismissed|patient_confirmed)$")
 
 
 class ConsentCreateRequest(APIModel):

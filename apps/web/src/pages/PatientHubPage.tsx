@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, X } from "lucide-react";
 import {
   acceptCaseMemory,
   acceptHypothesis,
@@ -8,6 +8,7 @@ import {
   createHypothesis,
   decideConsent,
   getCaseMemory,
+  getClinicalRecord,
   getClinicalRecords,
   getCurrentFormulation,
   getCurrentTreatmentPlan,
@@ -23,10 +24,13 @@ import {
   updateTreatmentGoal,
   upsertFormulationDraft,
   upsertTreatmentPlan,
+  type ClinicalRecordDetail,
+  type ClinicalRecordSummary,
   type HypothesisItem,
   type PackageItem,
   type Patient,
 } from "../lib/workspace";
+import { toHash } from "../lib/navigation";
 
 type Props = {
   patientId: string;
@@ -35,6 +39,7 @@ type Props = {
   onNavigateDeepLink?: (link: string) => void;
   clinicalAccess?: boolean;
   initialFocus?: "prontuario" | "formulacao" | "hub";
+  initialRecordId?: string;
 };
 
 export default function PatientHubPage({
@@ -44,11 +49,12 @@ export default function PatientHubPage({
   onNavigateDeepLink,
   clinicalAccess = true,
   initialFocus = "hub",
+  initialRecordId,
 }: Props) {
   const [patient, setPatient] = useState<Patient | null>(null);
   const [memory, setMemory] = useState<Record<string, unknown>[]>([]);
   const [consents, setConsents] = useState<Record<string, unknown>[]>([]);
-  const [records, setRecords] = useState<Record<string, unknown>[]>([]);
+  const [records, setRecords] = useState<ClinicalRecordSummary[]>([]);
   const [hypotheses, setHypotheses] = useState<HypothesisItem[]>([]);
   const [prep, setPrep] = useState<Record<string, unknown> | null>(null);
   const [formulation, setFormulation] = useState<Record<string, unknown> | null>(null);
@@ -64,6 +70,8 @@ export default function PatientHubPage({
   const [goalTitle, setGoalTitle] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [hint, setHint] = useState<string | null>(null);
+  const [recordDetail, setRecordDetail] = useState<ClinicalRecordDetail | null>(null);
+  const [recordLoading, setRecordLoading] = useState(false);
 
   const load = async () => {
     try {
@@ -96,6 +104,30 @@ export default function PatientHubPage({
     }
   };
 
+  const openRecord = async (recordId: string) => {
+    if (!clinicalAccess) return;
+    setRecordLoading(true);
+    setError(null);
+    try {
+      const detail = await getClinicalRecord(recordId);
+      setRecordDetail(detail);
+      const hash = toHash({
+        type: "patient",
+        patientId,
+        focus: "prontuario",
+        recordId,
+      });
+      const next = hash.startsWith("#") ? hash.slice(1) : hash;
+      if (window.location.hash.replace(/^#/, "") !== next) {
+        window.location.hash = next;
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao abrir prontuário");
+    } finally {
+      setRecordLoading(false);
+    }
+  };
+
   useEffect(() => {
     void load();
   }, [patientId, clinicalAccess]);
@@ -107,6 +139,13 @@ export default function PatientHubPage({
       recordsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   }, [initialFocus, patient]);
+
+  useEffect(() => {
+    if (clinicalAccess && initialRecordId) {
+      void openRecord(initialRecordId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- open once when deep-link record changes
+  }, [initialRecordId, clinicalAccess, patientId]);
 
   if (error && !patient) {
     return (
@@ -170,12 +209,18 @@ export default function PatientHubPage({
       {clinicalAccess && prep && (
         <section className="rounded-2xl border border-emerald-200 bg-white/70 p-4 text-sm">
           <h2 className="mb-2 font-semibold text-emerald-800">Preparar próxima sessão</h2>
-          <p className="text-emerald-900/80">
+          <p className="font-medium text-emerald-950">
             {(prep.suggested_focus as string) ||
               (prep.last_session_summary as { focus?: string } | undefined)?.focus ||
               (prep.supervisor_action as string) ||
               "Contexto disponível na API."}
           </p>
+          {(prep.last_session_summary as { evolution?: string } | undefined)?.evolution && (
+            <p className="mt-2 whitespace-pre-wrap text-emerald-900/80">
+              Última evolução:{" "}
+              {(prep.last_session_summary as { evolution?: string }).evolution}
+            </p>
+          )}
         </section>
       )}
 
@@ -535,13 +580,30 @@ export default function PatientHubPage({
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-emerald-700">
           Prontuário recente
         </h2>
-        {records.slice(0, 5).map((r) => (
-          <div key={String(r.id)} className="mb-2 rounded-xl border px-3 py-2 text-sm">
+        <p className="mb-3 text-xs text-emerald-800/70">
+          Registros finalizados no modelo CFP — somente leitura. Toque para abrir o detalhe.
+        </p>
+        {recordLoading && (
+          <p className="mb-2 text-sm text-emerald-800/70">Abrindo registro…</p>
+        )}
+        {records.slice(0, 12).map((r) => (
+          <button
+            key={r.id}
+            type="button"
+            className="mb-2 block w-full rounded-xl border px-3 py-2 text-left text-sm hover:bg-emerald-50/80"
+            onClick={() => void openRecord(r.id)}
+          >
             <div className="text-xs text-emerald-700">
               {String(r.recorded_at || "").replace("T", " · ").split(".")[0]}
+              {r.status ? ` · ${r.status}` : ""}
             </div>
-            <div>{String(r.focus || "Sem foco")}</div>
-          </div>
+            <div className="font-medium text-emerald-950">{r.focus || "Sem foco"}</div>
+            {r.evolution_preview && (
+              <p className="mt-1 line-clamp-2 text-xs text-emerald-900/75">
+                {r.evolution_preview}
+              </p>
+            )}
+          </button>
         ))}
         {records.length === 0 && (
           <p className="text-sm text-emerald-800/70">Nenhum registro clínico ainda.</p>
@@ -563,6 +625,65 @@ export default function PatientHubPage({
           ))}
         </section>
       )}
+
+      {recordDetail && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-emerald-950/50 p-4 backdrop-blur-sm md:items-center">
+          <div className="max-h-[90vh] w-full max-w-2xl space-y-4 overflow-y-auto rounded-3xl border border-emerald-100 bg-white p-5 shadow-2xl md:p-7">
+            <div className="flex items-start justify-between gap-3 border-b border-emerald-50 pb-3">
+              <div>
+                <h3 className="font-serif text-xl text-emerald-950">Prontuário (modelo CFP)</h3>
+                <p className="text-xs text-emerald-700">
+                  {String(recordDetail.recorded_at || "").replace("T", " · ").split(".")[0]}
+                  {recordDetail.status ? ` · ${recordDetail.status}` : ""}
+                  {" · somente leitura"}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="rounded-xl p-1.5 text-emerald-700 hover:bg-emerald-50"
+                aria-label="Fechar"
+                onClick={() => {
+                  setRecordDetail(null);
+                  window.location.hash = `pacientes/${patientId}/prontuario`;
+                }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <RecordField label="Foco" value={recordDetail.focus} />
+            <RecordField label="Evolução" value={recordDetail.evolution} />
+            <RecordField
+              label="Observações relevantes"
+              value={recordDetail.relevant_observations}
+            />
+            <RecordField label="Intervenções" value={recordDetail.interventions} />
+            <RecordField label="Tarefas" value={recordDetail.tasks} />
+            <RecordField label="Planejamento" value={recordDetail.planning} />
+            {recordDetail.session_id && onNavigateDeepLink && (
+              <button
+                type="button"
+                className="rounded-xl border px-3 py-2 text-sm"
+                onClick={() => onNavigateDeepLink(`/sessoes/${recordDetail.session_id}`)}
+              >
+                Abrir sessão de origem
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RecordField({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div>
+      <div className="text-[10px] font-bold uppercase tracking-wide text-emerald-700">
+        {label}
+      </div>
+      <p className="mt-1 whitespace-pre-wrap text-sm text-emerald-950">
+        {value?.trim() ? value : "—"}
+      </p>
     </div>
   );
 }

@@ -128,8 +128,10 @@ class ConfirmationQueueService:
     async def mark_status(self, notification_id: uuid.UUID, *, status: str) -> dict:
         """Ops workflow for real clinic use: copied → sent (providers plug later)."""
         self.auth.require(Permission.APPOINTMENT_WRITE)
-        if status not in {"copied", "sent", "dismissed"}:
-            raise ValidationAppError("Status inválido. Use copied, sent ou dismissed.")
+        if status not in {"copied", "sent", "dismissed", "patient_confirmed"}:
+            raise ValidationAppError(
+                "Status inválido. Use copied, sent, dismissed ou patient_confirmed."
+            )
 
         note = await self.db.get(Notification, notification_id)
         if (
@@ -155,6 +157,9 @@ class ConfirmationQueueService:
         elif status == "dismissed":
             payload["dismissed_at"] = now.isoformat()
             note.read_at = now
+        elif status == "patient_confirmed":
+            payload["confirmed_at"] = now.isoformat()
+            note.read_at = now
 
         note.payload = payload
 
@@ -171,6 +176,9 @@ class ConfirmationQueueService:
                     appt.confirmation_status = "sent"
                 elif status == "dismissed":
                     appt.confirmation_status = "pending"
+                elif status == "patient_confirmed":
+                    appt.status = "confirmed"
+                    appt.confirmation_status = "confirmed"
 
         await write_audit(
             self.db,
