@@ -28,7 +28,10 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = 14
     bcrypt_rounds: int = 12
 
-    cors_origins: str = "http://localhost:3000,http://localhost:8080"
+    cors_origins: str = (
+        "http://localhost:3000,http://127.0.0.1:3000,"
+        "http://localhost:8080,http://127.0.0.1:8080"
+    )
 
     ai_enabled: bool = False
     ai_fast_model: str = "openai:gpt-4o-mini"

@@ -1,5 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../network/api_client.dart';
 
@@ -41,8 +42,6 @@ class AuthController extends Notifier<AuthState> {
   static const _tokenKey = 'serenapsi_access_token';
   static const _refreshKey = 'serenapsi_refresh_token';
 
-  final FlutterSecureStorage _storage = const FlutterSecureStorage();
-
   @override
   AuthState build() {
     Future.microtask(_restore);
@@ -50,28 +49,35 @@ class AuthController extends Notifier<AuthState> {
   }
 
   Future<void> _restore() async {
-    final token = await _storage.read(key: _tokenKey);
-    final refresh = await _storage.read(key: _refreshKey);
-    if (token != null) {
-      state = state.copyWith(accessToken: token, refreshToken: refresh);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString(_tokenKey);
+      final refresh = prefs.getString(_refreshKey);
+      if (token != null && token.isNotEmpty) {
+        state = state.copyWith(accessToken: token, refreshToken: refresh);
+      }
+    } catch (_) {
+      // Web/local storage pode falhar; login ainda funciona na sessão atual.
     }
   }
 
   Future<void> login({required String email, required String password}) async {
-    final client = ApiClient(
-      baseUrl: const String.fromEnvironment(
-        'API_BASE_URL',
-        defaultValue: 'http://localhost:8000',
-      ),
-    );
+    final client = ApiClient(baseUrl: resolveApiBaseUrl());
     final data = await client.post('/api/v1/auth/login', body: {
       'email': email,
       'password': password,
     });
     final access = data['access_token'] as String;
     final refresh = data['refresh_token'] as String?;
-    await _storage.write(key: _tokenKey, value: access);
-    if (refresh != null) await _storage.write(key: _refreshKey, value: refresh);
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_tokenKey, access);
+      if (refresh != null) await prefs.setString(_refreshKey, refresh);
+    } catch (_) {
+      // Não bloqueia o login se o storage falhar (comum em alguns contextos web).
+    }
+
     state = AuthState(
       accessToken: access,
       refreshToken: refresh,
@@ -84,12 +90,23 @@ class AuthController extends Notifier<AuthState> {
   }
 
   Future<void> logout() async {
-    await _storage.delete(key: _tokenKey);
-    await _storage.delete(key: _refreshKey);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_tokenKey);
+      await prefs.remove(_refreshKey);
+    } catch (_) {}
     state = const AuthState();
   }
 
   bool hasPermission(String permission) => state.permissions.contains(permission);
+}
+
+/// Em web, default same-origin (via gateway :3000). Em outras plataformas, API local.
+String resolveApiBaseUrl() {
+  const fromEnv = String.fromEnvironment('API_BASE_URL');
+  if (fromEnv.isNotEmpty) return fromEnv;
+  if (kIsWeb) return '';
+  return 'http://127.0.0.1:8000';
 }
 
 final authControllerProvider = NotifierProvider<AuthController, AuthState>(AuthController.new);
