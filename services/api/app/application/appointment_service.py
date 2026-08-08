@@ -40,7 +40,8 @@ class AppointmentService:
 
     async def create(self, data: dict) -> dict:
         self.auth.require(Permission.APPOINTMENT_WRITE)
-        patient_id = uuid.UUID(data["patient_id"])
+        raw_patient_id = data["patient_id"]
+        patient_id = raw_patient_id if isinstance(raw_patient_id, uuid.UUID) else uuid.UUID(str(raw_patient_id))
         patient = await self.db.get(Patient, patient_id)
         if (
             patient is None
@@ -52,7 +53,12 @@ class AppointmentService:
         starts_at = _parse_dt(data["starts_at"])
         duration = int(data.get("duration_minutes") or 50)
         ends_at = starts_at + timedelta(minutes=duration)
-        professional_id = uuid.UUID(data.get("professional_id") or str(self.auth.user_id))
+        professional_raw = data.get("professional_id") or self.auth.user_id
+        professional_id = (
+            professional_raw
+            if isinstance(professional_raw, uuid.UUID)
+            else uuid.UUID(str(professional_raw))
+        )
 
         conflict = await self._find_conflict(professional_id, starts_at, ends_at)
         if conflict:
@@ -140,6 +146,53 @@ class AppointmentService:
             request_id=self.auth.request_id,
         )
         await self.db.commit()
+        return self._to_dto(appt, patient)
+
+    async def reschedule(
+        self,
+        appointment_id: uuid.UUID,
+        *,
+        starts_at: datetime,
+        duration_minutes: int | None = None,
+        expected_version: int | None = None,
+    ) -> dict:
+        self.auth.require(Permission.APPOINTMENT_WRITE)
+        appt = await self._get_owned(appointment_id)
+        if expected_version is not None and appt.version != expected_version:
+            raise ConflictError(
+                "Este atendimento foi alterado por outra pessoa. Recarregue e tente novamente.",
+                code="OPTIMISTIC_LOCK",
+            )
+        starts = starts_at if starts_at.tzinfo else starts_at.replace(tzinfo=UTC)
+        duration = duration_minutes or appt.duration_minutes
+        ends = starts + timedelta(minutes=duration)
+        conflict = await self._find_conflict(appt.professional_id, starts, ends, exclude_id=appt.id)
+        if conflict:
+            raise ConflictError("Conflito de horário com outro atendimento.", code="APPOINTMENT_CONFLICT")
+
+        appt.starts_at = starts
+        appt.ends_at = ends
+        appt.duration_minutes = duration
+        appt.status = "awaiting_confirmation"
+        appt.confirmation_status = "pending"
+        appt.version += 1
+        patient = await self.db.get(Patient, appt.patient_id)
+        await write_audit(
+            self.db,
+            organization_id=self.auth.organization_id,
+            actor_user_id=self.auth.user_id,
+            action="appointment.rescheduled",
+            resource_type="appointment",
+            resource_id=str(appt.id),
+            request_id=self.auth.request_id,
+        )
+        await self.db.commit()
+        return self._to_dto(appt, patient)
+
+    async def get(self, appointment_id: uuid.UUID) -> dict:
+        self.auth.require(Permission.APPOINTMENT_READ)
+        appt = await self._get_owned(appointment_id)
+        patient = await self.db.get(Patient, appt.patient_id)
         return self._to_dto(appt, patient)
 
     async def _find_conflict(

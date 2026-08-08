@@ -1,33 +1,29 @@
 # Roadmap de implementação
 
-## Concluído nesta fundação (P0 + P1 parcial + P2 scaffold)
+## Concluído
 
 - Monorepo Flutter + FastAPI + PostgreSQL
-- Multitenancy com `organization_id` e isolamento no servidor
-- Auth JWT + RBAC por permissões (não só nome de perfil)
-- Schema inicial (clínico, financeiro, docs, IA, auditoria) + migration Alembic
-- Pacientes, agenda, Meu Dia, sessões (start/autosave/close), preparação
-- Serena AI Gateway (privacy, context, frameworks CBT/Schema, critic, safety, offline)
-- App Flutter: design system, shell responsivo, login, Meu Dia, pacientes, hub
-- Seed fictício, testes unitários/integração/segurança, CI, ADRs
+- Multitenancy, JWT, RBAC por permissões, auditoria, redaction
+- Pacientes, Meu Dia, agenda API, sessões (start/autosave/close)
+- Serena AI Gateway (offline assist + frameworks CBT/Schema)
+- Consentimentos versionados (API + hub)
+- Prontuário longitudinal (lista)
+- Flutter: Agenda dia/semana, sessão com autosave, hub com Supervisor
+- Gateway `:3000`, testes, CI, ADRs
 
-## Próximas fases
+## Próximo
 
 ### P1 restante
-- Agenda completa (semana/mês, drag-drop, recorrência)
-- Fluxo guiado de encerramento + autosave UI
-- Prontuário longitudinal versionado na UI
+- Agenda mês + drag-and-drop + recorrência
+- Painel lateral de detalhes / reagendar na UI
 
 ### P2
-- Case Memory persistida + proveniência
-- Modos do Supervisor conectados a providers reais
-- Living formulation (aceitar/editar/ignorar)
+- Case Memory + proveniência
+- Providers LLM reais
+- Living formulation
 
 ### P3
-- Financeiro operacional, documentos, consentimentos versionados
+- Financeiro, documentos, confirmações multi-canal
 
-### P4
-- Knowledge RAG, motor longitudinal
-
-### P5
-- Planos, usage, admin interno sem acesso clínico indiscriminado
+### P4–P5
+- RAG, motor longitudinal, planos comerciais

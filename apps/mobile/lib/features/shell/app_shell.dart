@@ -13,6 +13,11 @@ class AppShell extends StatelessWidget {
     final width = MediaQuery.sizeOf(context).width;
     final location = GoRouterState.of(context).uri.toString();
 
+    // Full-bleed clinical session — hide chrome for tablet focus.
+    if (location.startsWith('/sessoes')) {
+      return Scaffold(body: child);
+    }
+
     if (width >= SerenaBreakpoints.desktop) {
       return _DesktopShell(location: location, child: child);
     }
@@ -32,11 +37,13 @@ class _NavItem {
 
 const _items = [
   _NavItem('Meu Dia', Icons.wb_twilight_outlined, '/hoje'),
+  _NavItem('Agenda', Icons.calendar_today_outlined, '/agenda'),
   _NavItem('Pacientes', Icons.people_outline, '/pacientes'),
 ];
 
 int _indexFor(String location) {
-  if (location.startsWith('/pacientes')) return 1;
+  if (location.startsWith('/agenda')) return 1;
+  if (location.startsWith('/pacientes')) return 2;
   return 0;
 }
 

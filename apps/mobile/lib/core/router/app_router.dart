@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../features/appointments/agenda_page.dart';
 import '../../features/auth/login_page.dart';
+import '../../features/patients/clinical_records_page.dart';
 import '../../features/patients/patient_hub_page.dart';
 import '../../features/patients/patients_page.dart';
+import '../../features/sessions/session_page.dart';
 import '../../features/shell/app_shell.dart';
 import '../../features/today/today_page.dart';
 import '../auth/auth_state.dart';
@@ -35,6 +38,10 @@ final routerProvider = Provider<GoRouter>((ref) {
             pageBuilder: (context, state) => const NoTransitionPage(child: TodayPage()),
           ),
           GoRoute(
+            path: '/agenda',
+            pageBuilder: (context, state) => const NoTransitionPage(child: AgendaPage()),
+          ),
+          GoRoute(
             path: '/pacientes',
             pageBuilder: (context, state) => const NoTransitionPage(child: PatientsPage()),
             routes: [
@@ -43,8 +50,29 @@ final routerProvider = Provider<GoRouter>((ref) {
                 builder: (context, state) => PatientHubPage(
                   patientId: state.pathParameters['id']!,
                 ),
+                routes: [
+                  GoRoute(
+                    path: 'prontuario',
+                    builder: (context, state) => ClinicalRecordsPage(
+                      patientId: state.pathParameters['id']!,
+                    ),
+                  ),
+                ],
               ),
             ],
+          ),
+          GoRoute(
+            path: '/sessoes/nova',
+            builder: (context, state) => SessionPage(
+              patientId: state.uri.queryParameters['patientId'],
+              appointmentId: state.uri.queryParameters['appointmentId'],
+            ),
+          ),
+          GoRoute(
+            path: '/sessoes/:id',
+            builder: (context, state) => SessionPage(
+              sessionId: state.pathParameters['id'],
+            ),
           ),
         ],
       ),

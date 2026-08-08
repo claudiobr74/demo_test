@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/auth/auth_state.dart';
 import '../../core/network/api_client.dart';
@@ -41,7 +42,7 @@ class TodayPage extends ConsumerWidget {
                 message: e.toString(),
                 onRetry: () => ref.invalidate(todayProvider),
               ),
-              data: (data) => _TodayContent(data: data, userName: auth.userName),
+              data: (data) => _TodayContent(data: data, userName: auth.userName, ref: ref),
             ),
           ),
         ),
@@ -51,9 +52,10 @@ class TodayPage extends ConsumerWidget {
 }
 
 class _TodayContent extends StatelessWidget {
-  const _TodayContent({required this.data, this.userName});
+  const _TodayContent({required this.data, required this.ref, this.userName});
 
   final Map<String, dynamic> data;
+  final WidgetRef ref;
   final String? userName;
 
   @override
@@ -84,9 +86,11 @@ class _TodayContent extends StatelessWidget {
               title: next['patient_display_name'] as String? ?? 'Paciente',
               subtitle: _formatWhen(next['starts_at'] as String?),
               primaryLabel: 'Iniciar sessão',
-              onPrimary: () {},
-              secondaryLabel: 'Preparar',
-              onSecondary: () {},
+              onPrimary: () => context.push(
+                '/sessoes/nova?patientId=${next['patient_id']}&appointmentId=${next['id']}',
+              ),
+              secondaryLabel: 'Ver paciente',
+              onSecondary: () => context.push('/pacientes/${next['patient_id']}'),
             ),
           )
         else
@@ -107,7 +111,19 @@ class _TodayContent extends StatelessWidget {
               ..._flattenAppointments(appointments).map(
                 (a) => Padding(
                   padding: const EdgeInsets.only(bottom: 8),
-                  child: _AppointmentTile(appointment: a),
+                  child: _AppointmentTile(
+                    appointment: a,
+                    onConfirm: () async {
+                      await ref.read(apiClientProvider).post(
+                        '/api/v1/appointments/${a['id']}/status',
+                        body: {'status': 'confirmed'},
+                      );
+                      ref.invalidate(todayProvider);
+                    },
+                    onStart: () => context.push(
+                      '/sessoes/nova?patientId=${a['patient_id']}&appointmentId=${a['id']}',
+                    ),
+                  ),
                 ),
               ),
               if (_flattenAppointments(appointments).isEmpty)
@@ -115,6 +131,14 @@ class _TodayContent extends StatelessWidget {
                   'Nenhum atendimento listado para hoje.',
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton(
+                  onPressed: () => context.go('/agenda'),
+                  child: const Text('Abrir agenda completa'),
+                ),
+              ),
             ],
           ),
         ),
@@ -134,7 +158,7 @@ class _TodayContent extends StatelessWidget {
                         title: Text((item as Map)['patient_display_name'] as String? ?? ''),
                         subtitle: Text(item['status'] as String? ?? ''),
                         trailing: FilledButton(
-                          onPressed: () {},
+                          onPressed: () => context.push('/sessoes/${item['id']}'),
                           child: Text(item['primary_action'] as String? ?? 'Continuar'),
                         ),
                       ),
@@ -238,8 +262,15 @@ class _MiniStat extends StatelessWidget {
 }
 
 class _AppointmentTile extends StatelessWidget {
-  const _AppointmentTile({required this.appointment});
+  const _AppointmentTile({
+    required this.appointment,
+    required this.onConfirm,
+    required this.onStart,
+  });
+
   final Map<String, dynamic> appointment;
+  final VoidCallback onConfirm;
+  final VoidCallback onStart;
 
   @override
   Widget build(BuildContext context) {
@@ -270,9 +301,9 @@ class _AppointmentTile extends StatelessWidget {
             ),
           ),
           if (status == 'awaiting_confirmation')
-            OutlinedButton(onPressed: () {}, child: const Text('Confirmar'))
+            OutlinedButton(onPressed: onConfirm, child: const Text('Confirmar'))
           else if (status == 'confirmed' || status == 'scheduled')
-            FilledButton(onPressed: () {}, child: const Text('Iniciar')),
+            FilledButton(onPressed: onStart, child: const Text('Iniciar')),
         ],
       ),
     );

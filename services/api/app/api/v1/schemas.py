@@ -89,6 +89,12 @@ class AppointmentStatusRequest(APIModel):
     reason: str | None = None
 
 
+class AppointmentRescheduleRequest(APIModel):
+    starts_at: datetime
+    duration_minutes: int | None = Field(default=None, ge=15, le=240)
+    version: int | None = None
+
+
 class SessionStartRequest(APIModel):
     patient_id: UUID
     appointment_id: UUID | None = None
@@ -119,3 +125,14 @@ class SupervisorRequest(APIModel):
     framework: str | None = None
     message: str | None = None
     context: dict[str, Any] = Field(default_factory=dict)
+
+
+class ConsentCreateRequest(APIModel):
+    consent_type: str
+    template_id: UUID | None = None
+
+
+class ConsentDecisionRequest(APIModel):
+    status: str
+    method: str | None = "manual"
+    notes: str | None = None
