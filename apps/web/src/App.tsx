@@ -23,6 +23,7 @@ const KnowledgePage = lazy(() => import("./pages/KnowledgePage"));
 const AiUsagePage = lazy(() => import("./pages/AiUsagePage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const SessionPage = lazy(() => import("./pages/SessionPage"));
+const PatientHubPage = lazy(() => import("./pages/PatientHubPage"));
 
 export default function App() {
   const initialUser = getStoredUser();
@@ -31,6 +32,7 @@ export default function App() {
   const [tab, setTab] = useState<TabId>("meudia");
   const [mobileOpen, setMobileOpen] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [patientId, setPatientId] = useState<string | null>(null);
   const [email, setEmail] = useState("dra.marina@serenapsi.dev");
   const [password, setPassword] = useState("SerenaPsi!dev1");
   const [keepSignedIn, setKeepSignedIn] = useState(true);
@@ -117,7 +119,27 @@ export default function App() {
   if (sessionId) {
     return (
       <Suspense fallback={<p className="p-8">Carregando sessão…</p>}>
-        <SessionPage sessionId={sessionId} onClose={() => setSessionId(null)} />
+        <SessionPage
+          sessionId={sessionId}
+          onClose={() => {
+            setSessionId(null);
+          }}
+        />
+      </Suspense>
+    );
+  }
+
+  if (patientId) {
+    return (
+      <Suspense fallback={<p className="p-8">Carregando paciente…</p>}>
+        <PatientHubPage
+          patientId={patientId}
+          onClose={() => setPatientId(null)}
+          onOpenSession={(id) => {
+            setPatientId(null);
+            setSessionId(id);
+          }}
+        />
       </Suspense>
     );
   }
@@ -127,7 +149,7 @@ export default function App() {
       case "meudia":
         return <MyDayPage onOpenSession={setSessionId} />;
       case "pacientes":
-        return <PatientsPage />;
+        return <PatientsPage onOpenPatient={setPatientId} />;
       case "agenda":
         return <AgendaPage />;
       case "financeiro":

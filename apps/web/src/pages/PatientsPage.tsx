@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { createPatient, getPatients, type Patient } from "../lib/workspace";
 
-export default function PatientsPage() {
+type Props = { onOpenPatient: (patientId: string) => void };
+
+export default function PatientsPage({ onOpenPatient }: Props) {
   const [items, setItems] = useState<Patient[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [firstName, setFirstName] = useState("");
@@ -25,7 +27,9 @@ export default function PatientsPage() {
     <div className="animate-fade-in space-y-6">
       <header>
         <h1 className="font-serif text-3xl text-emerald-950">Pacientes</h1>
-        <p className="mt-1 text-emerald-800/80">Fichas do consultório — dados na API própria.</p>
+        <p className="mt-1 text-emerald-800/80">
+          Fichas e hub clínico — toque para abrir memória, consentimentos e prontuário.
+        </p>
       </header>
 
       <form
@@ -71,15 +75,17 @@ export default function PatientsPage() {
 
       <div className="space-y-2">
         {items.map((p) => (
-          <div
+          <button
             key={p.id}
-            className="rounded-2xl border border-emerald-200 bg-white/70 px-4 py-3"
+            type="button"
+            onClick={() => onOpenPatient(p.id)}
+            className="w-full rounded-2xl border border-emerald-200 bg-white/70 px-4 py-3 text-left hover:border-emerald-500"
           >
             <div className="font-medium">{p.display_name}</div>
             <div className="text-xs text-emerald-800/70">
               {p.internal_code || "—"} · {p.email || "sem e-mail"}
             </div>
-          </div>
+          </button>
         ))}
         {items.length === 0 && (
           <p className="text-sm text-emerald-800/70">Nenhum paciente cadastrado ainda.</p>

@@ -42,7 +42,33 @@ export interface SessionRecord {
   status?: string;
   focus?: string | null;
   observations?: string | null;
+  events?: string | null;
+  interventions?: string | null;
+  responses?: string | null;
+  hypotheses?: string | null;
+  tasks?: string | null;
+  agreements?: string | null;
+  planning?: string | null;
   started_at?: string | null;
+  version?: number;
+  appointment_id?: string | null;
+}
+
+export interface DocTemplate {
+  id: string;
+  name: string;
+  doc_type?: string;
+  body_template?: string;
+}
+
+export interface ChargeItem {
+  id: string;
+  patient_id?: string;
+  amount: string | number;
+  status: string;
+  description?: string | null;
+  origin?: string;
+  due_date?: string | null;
 }
 
 export interface TaskItem {
@@ -141,6 +167,142 @@ export async function startSession(patientId: string, appointmentId?: string): P
       patient_id: patientId,
       appointment_id: appointmentId,
     }),
+  });
+}
+
+export async function getSession(sessionId: string): Promise<SessionRecord> {
+  return apiJson<SessionRecord>(`/api/v1/sessions/${sessionId}`);
+}
+
+export async function autosaveSession(
+  sessionId: string,
+  payload: Record<string, unknown>,
+): Promise<{ version: number; autosave_at?: string }> {
+  return apiJson(`/api/v1/sessions/${sessionId}/autosave`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function closeSession(sessionId: string, finalizeRecord = true) {
+  return apiJson<Record<string, unknown>>(`/api/v1/sessions/${sessionId}/close`, {
+    method: "POST",
+    body: JSON.stringify({ finalize_record: finalizeRecord }),
+  });
+}
+
+export async function deferSessionClosure(sessionId: string) {
+  return apiJson(`/api/v1/sessions/${sessionId}/defer-closure`, { method: "POST" });
+}
+
+export async function prepareSessionContext(patientId: string) {
+  return apiJson<Record<string, unknown>>(`/api/v1/sessions/prepare/${patientId}`);
+}
+
+export async function getPatient(patientId: string): Promise<Patient> {
+  return apiJson<Patient>(`/api/v1/patients/${patientId}`);
+}
+
+export async function getCaseMemory(patientId: string) {
+  const data = await apiJson<{ items: Record<string, unknown>[] }>(
+    `/api/v1/case-memory/patients/${patientId}`,
+  );
+  return data.items || [];
+}
+
+export async function addCaseMemory(
+  patientId: string,
+  payload: { kind: string; content: string; provenance?: Record<string, unknown>[] },
+) {
+  return apiJson(`/api/v1/case-memory/patients/${patientId}`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function acceptCaseMemory(entryId: string) {
+  return apiJson(`/api/v1/case-memory/${entryId}/accept`, { method: "POST" });
+}
+
+export async function getPatientConsents(patientId: string) {
+  const data = await apiJson<{ items: Record<string, unknown>[] }>(
+    `/api/v1/consents/patients/${patientId}`,
+  );
+  return data.items || [];
+}
+
+export async function requestConsent(patientId: string, consentType: string) {
+  return apiJson(`/api/v1/consents/patients/${patientId}`, {
+    method: "POST",
+    body: JSON.stringify({ consent_type: consentType }),
+  });
+}
+
+export async function decideConsent(consentId: string, status: "accepted" | "refused") {
+  return apiJson(`/api/v1/consents/${consentId}/decision`, {
+    method: "POST",
+    body: JSON.stringify({ status, method: "manual" }),
+  });
+}
+
+export async function getClinicalRecords(patientId: string) {
+  const data = await apiJson<{ items: Record<string, unknown>[] }>(
+    `/api/v1/clinical-records/patients/${patientId}`,
+  );
+  return data.items || [];
+}
+
+export async function getDocumentTemplates(): Promise<DocTemplate[]> {
+  const data = await apiJson<{ items: DocTemplate[] }>("/api/v1/documents/templates");
+  return data.items || [];
+}
+
+export async function createDocument(payload: {
+  patient_id?: string;
+  template_id?: string;
+  title?: string;
+  body?: string;
+}) {
+  return apiJson<DocItem>("/api/v1/documents", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function finalizeDocument(documentId: string) {
+  return apiJson(`/api/v1/documents/${documentId}/finalize`, {
+    method: "POST",
+    body: JSON.stringify({ confirm: true }),
+  });
+}
+
+export async function exportDocument(documentId: string, format: "txt" | "html" | "pdf" = "html") {
+  return apiJson<{ content: string; filename?: string; print_hint?: string }>(
+    `/api/v1/documents/${documentId}/export?format=${format}`,
+  );
+}
+
+export async function createCharge(payload: {
+  patient_id: string;
+  amount: number | string;
+  description?: string;
+  origin?: string;
+}) {
+  return apiJson<ChargeItem>("/api/v1/finance/charges", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function registerPayment(payload: {
+  charge_id: string;
+  amount: number | string;
+  method?: string;
+  notes?: string;
+}) {
+  return apiJson("/api/v1/finance/payments", {
+    method: "POST",
+    body: JSON.stringify(payload),
   });
 }
 

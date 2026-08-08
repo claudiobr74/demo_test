@@ -37,9 +37,11 @@
 ## Próximo (pelo prompt inicial + modelo React)
 
 ### Web React
-- Portar telas rich do `src/legacy/` (ActiveSession, Finance detalhado, Documents templates) para pages API
-- Fechamento de sessão / recibos / pacotes no React
-- PWA install flow do modelo (já no Sidebar legado)
+- Sessão ativa com autosave, Supervisor e encerramento guiado (feito)
+- Financeiro com cobrança/pagamento; Documentos com modelos/export (feito)
+- Hub do paciente (memória, consentimentos, prontuário) (feito)
+- Recibos / pacotes / PWA install flow do modelo
+- Continuar portando detalhes do `src/legacy/` (ActiveSession áudio, Finance relatórios)
 
 ### P2/P3 restante
 - Transcrição opcional → proposta → revisão humana (não vira prontuário sozinha)
