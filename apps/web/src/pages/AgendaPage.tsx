@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import ConfirmationQueuePanel from "../components/ConfirmationQueuePanel";
 import {
   createAppointment,
   enqueueConfirmation,
@@ -11,7 +12,7 @@ import {
   type Patient,
 } from "../lib/workspace";
 
-type ViewMode = "day" | "week";
+type ViewMode = "day" | "week" | "month";
 
 export default function AgendaPage() {
   const [day, setDay] = useState(() => new Date());
@@ -25,6 +26,7 @@ export default function AgendaPage() {
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
+  const [queueKey, setQueueKey] = useState(0);
 
   const range = useMemo(() => {
     if (view === "day") {
@@ -33,11 +35,27 @@ export default function AgendaPage() {
       end.setDate(end.getDate() + 1);
       return { start, end };
     }
+    if (view === "month") {
+      const start = new Date(day.getFullYear(), day.getMonth(), 1);
+      const end = new Date(day.getFullYear(), day.getMonth() + 1, 1);
+      return { start, end };
+    }
     const start = startOfWeek(day);
     const end = new Date(start);
     end.setDate(end.getDate() + 7);
     return { start, end };
   }, [day, view]);
+
+  const monthGroups = useMemo(() => {
+    const map = new Map<string, Appointment[]>();
+    for (const a of items) {
+      const key = new Date(a.starts_at).toISOString().slice(0, 10);
+      const list = map.get(key) || [];
+      list.push(a);
+      map.set(key, list);
+    }
+    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
+  }, [items]);
 
   const weekDays = useMemo(() => {
     const start = startOfWeek(day);
@@ -71,7 +89,11 @@ export default function AgendaPage() {
 
   const shiftDay = (delta: number) => {
     const next = new Date(day);
-    next.setDate(next.getDate() + (view === "week" ? delta * 7 : delta));
+    if (view === "month") {
+      next.setMonth(next.getMonth() + delta);
+    } else {
+      next.setDate(next.getDate() + (view === "week" ? delta * 7 : delta));
+    }
     setDay(next);
   };
 
@@ -117,6 +139,12 @@ export default function AgendaPage() {
             >
               Semana
             </button>
+            <button
+              className={`rounded-lg px-3 py-1.5 ${view === "month" ? "bg-emerald-800 text-white" : ""}`}
+              onClick={() => setView("month")}
+            >
+              Mês
+            </button>
           </div>
           <button className="rounded-lg border px-3 py-1.5" onClick={() => shiftDay(-1)}>
             ←
@@ -128,7 +156,9 @@ export default function AgendaPage() {
                   day: "2-digit",
                   month: "2-digit",
                 })
-              : `${weekDays[0].toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })} – ${weekDays[6].toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}`}
+              : view === "month"
+                ? day.toLocaleDateString("pt-BR", { month: "long", year: "numeric" })
+                : `${weekDays[0].toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })} – ${weekDays[6].toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}`}
           </div>
           <button className="rounded-lg border px-3 py-1.5" onClick={() => shiftDay(1)}>
             →
@@ -214,7 +244,7 @@ export default function AgendaPage() {
       {error && <p className="text-red-700">{error}</p>}
       {msg && <p className="rounded-xl bg-emerald-100 px-3 py-2 text-sm">{msg}</p>}
 
-      {view === "day" ? (
+      {view === "day" && (
         <div className="space-y-3">
           {items.map((a) => (
             <AppointmentCard
@@ -233,6 +263,7 @@ export default function AgendaPage() {
               }}
               onEnqueue={async () => {
                 await enqueueConfirmation(a.id);
+                setQueueKey((k) => k + 1);
                 setMsg("Confirmação enfileirada (stub multi-canal — sem Gmail).");
               }}
             />
@@ -241,7 +272,9 @@ export default function AgendaPage() {
             <p className="text-sm text-emerald-800/70">Nenhum atendimento neste dia.</p>
           )}
         </div>
-      ) : (
+      )}
+
+      {view === "week" && (
         <div className="overflow-x-auto rounded-2xl border border-emerald-200 bg-white/70">
           <div className="grid min-w-[900px] grid-cols-[64px_repeat(7,1fr)]">
             <div className="border-b border-emerald-100 p-2 text-xs text-emerald-700" />
@@ -270,6 +303,52 @@ export default function AgendaPage() {
           </p>
         </div>
       )}
+
+      {view === "month" && (
+        <div className="space-y-4">
+          {monthGroups.map(([dateKey, dayItems]) => (
+            <section
+              key={dateKey}
+              className="rounded-2xl border border-emerald-200 bg-white/70 p-4"
+            >
+              <h3 className="mb-3 text-sm font-semibold text-emerald-900">
+                {new Date(`${dateKey}T12:00:00`).toLocaleDateString("pt-BR", {
+                  weekday: "long",
+                  day: "2-digit",
+                  month: "long",
+                })}
+              </h3>
+              <div className="space-y-2">
+                {dayItems.map((a) => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    className="flex w-full items-center justify-between rounded-xl border px-3 py-2 text-left text-sm hover:bg-emerald-50"
+                    onClick={() => {
+                      setDay(new Date(a.starts_at));
+                      setView("day");
+                    }}
+                  >
+                    <span>
+                      {new Date(a.starts_at).toLocaleTimeString("pt-BR", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}{" "}
+                      · {a.patient_display_name}
+                    </span>
+                    <span className="text-xs text-emerald-800/70">{a.status}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          ))}
+          {monthGroups.length === 0 && (
+            <p className="text-sm text-emerald-800/70">Nenhum atendimento neste mês.</p>
+          )}
+        </div>
+      )}
+
+      <ConfirmationQueuePanel refreshKey={queueKey} />
     </div>
   );
 }

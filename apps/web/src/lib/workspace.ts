@@ -332,6 +332,60 @@ export async function enqueueConfirmation(appointmentId: string, channel = "what
   });
 }
 
+export interface ConfirmationQueueItem {
+  id: string;
+  channel?: string;
+  title?: string;
+  body?: string;
+  status?: string;
+  appointment_id?: string;
+  patient_id?: string;
+  created_at?: string | null;
+}
+
+export async function getConfirmationQueue(): Promise<ConfirmationQueueItem[]> {
+  const data = await apiJson<{ items: ConfirmationQueueItem[] }>("/api/v1/confirmations/queue");
+  return data.items || [];
+}
+
+export interface HypothesisItem {
+  id: string;
+  statement: string;
+  strength?: string;
+  epistemology?: string;
+  created_by?: string;
+  pending_review?: boolean;
+  status?: string;
+}
+
+export async function getHypotheses(patientId: string): Promise<HypothesisItem[]> {
+  const data = await apiJson<{ items: HypothesisItem[] }>(
+    `/api/v1/hypotheses/patients/${patientId}`,
+  );
+  return data.items || [];
+}
+
+export async function createHypothesis(patientId: string, statement: string) {
+  return apiJson<HypothesisItem>(`/api/v1/hypotheses/patients/${patientId}`, {
+    method: "POST",
+    body: JSON.stringify({ statement }),
+  });
+}
+
+export async function acceptHypothesis(id: string) {
+  return apiJson<HypothesisItem>(`/api/v1/hypotheses/${id}/accept`, { method: "POST" });
+}
+
+export async function updateHypothesisStrength(
+  id: string,
+  strength: "active" | "strengthened" | "weakened" | "retired",
+) {
+  return apiJson<HypothesisItem>(`/api/v1/hypotheses/${id}/strength`, {
+    method: "POST",
+    body: JSON.stringify({ strength }),
+  });
+}
+
 export async function exportDocument(documentId: string, format: "txt" | "html" | "pdf" = "html") {
   return apiJson<{ content: string; filename?: string; print_hint?: string }>(
     `/api/v1/documents/${documentId}/export?format=${format}`,

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  acceptHypothesis,
   addCaseMemory,
   getPatients,
   runSupervisor,
@@ -32,9 +33,11 @@ export default function SupervisorPage({ initialPatientId }: Props) {
 
   const focuses = ((result?.suggested_focus as string[]) || []).filter(Boolean);
   const questions = ((result?.questions as string[]) || []).filter(Boolean);
-  const hypotheses = ((result?.hypotheses as { statement?: string }[]) || [])
-    .map((h) => h.statement || "")
-    .filter(Boolean);
+  const imported = (result?.imported_hypotheses as { id?: string; statement?: string }[]) || [];
+  const rawHyps = (result?.hypotheses as { id?: string; statement?: string }[]) || [];
+  const hypotheses = (imported.length ? imported : rawHyps).filter(
+    (h): h is { id?: string; statement: string } => Boolean(h.statement),
+  );
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -163,19 +166,24 @@ export default function SupervisorPage({ initialPatientId }: Props) {
               <ul className="space-y-2 text-sm">
                 {hypotheses.map((h) => (
                   <li
-                    key={h}
+                    key={h.id || h.statement}
                     className="flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2"
                   >
-                    <span>{h}</span>
+                    <span>{h.statement}</span>
                     <button
                       className="rounded-lg border px-2 py-1 text-xs"
                       onClick={async () => {
-                        await addCaseMemory(patientId, {
-                          kind: "hypothesis",
-                          content: h,
-                          provenance: [{ resource_type: "ai_suggestion", note: mode }],
-                        });
-                        setHint("Hipótese registrada como sugestão (revisão profissional).");
+                        if (h.id) {
+                          await acceptHypothesis(h.id);
+                          setHint("Hipótese clínica aceita no hub do paciente.");
+                        } else if (h.statement) {
+                          await addCaseMemory(patientId, {
+                            kind: "hypothesis",
+                            content: h.statement,
+                            provenance: [{ resource_type: "ai_suggestion", note: mode }],
+                          });
+                          setHint("Hipótese registrada como sugestão (revisão profissional).");
+                        }
                       }}
                     >
                       Aceitar

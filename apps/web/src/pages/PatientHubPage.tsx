@@ -1,14 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import {
   acceptCaseMemory,
+  acceptHypothesis,
   addCaseMemory,
   addTreatmentGoal,
+  createHypothesis,
   decideConsent,
   getCaseMemory,
   getClinicalRecords,
   getCurrentFormulation,
   getCurrentTreatmentPlan,
+  getHypotheses,
   getPackages,
   getPatient,
   getPatientConsents,
@@ -16,9 +19,11 @@ import {
   promoteFormulation,
   requestConsent,
   startSession,
+  updateHypothesisStrength,
   updateTreatmentGoal,
   upsertFormulationDraft,
   upsertTreatmentPlan,
+  type HypothesisItem,
   type PackageItem,
   type Patient,
 } from "../lib/workspace";
@@ -27,19 +32,24 @@ type Props = {
   patientId: string;
   onClose: () => void;
   onOpenSession: (sessionId: string) => void;
+  onNavigateDeepLink?: (link: string) => void;
   clinicalAccess?: boolean;
+  initialFocus?: "prontuario" | "formulacao" | "hub";
 };
 
 export default function PatientHubPage({
   patientId,
   onClose,
   onOpenSession,
+  onNavigateDeepLink,
   clinicalAccess = true,
+  initialFocus = "hub",
 }: Props) {
   const [patient, setPatient] = useState<Patient | null>(null);
   const [memory, setMemory] = useState<Record<string, unknown>[]>([]);
   const [consents, setConsents] = useState<Record<string, unknown>[]>([]);
   const [records, setRecords] = useState<Record<string, unknown>[]>([]);
+  const [hypotheses, setHypotheses] = useState<HypothesisItem[]>([]);
   const [prep, setPrep] = useState<Record<string, unknown> | null>(null);
   const [formulation, setFormulation] = useState<Record<string, unknown> | null>(null);
   const [plan, setPlan] = useState<Record<string, unknown> | null>(null);
@@ -48,13 +58,16 @@ export default function PatientHubPage({
   const [kind, setKind] = useState("observation");
   const [focusDraft, setFocusDraft] = useState("");
   const [planSummary, setPlanSummary] = useState("");
+  const [newHypothesis, setNewHypothesis] = useState("");
+  const formulationRef = useRef<HTMLElement | null>(null);
+  const recordsRef = useRef<HTMLElement | null>(null);
   const [goalTitle, setGoalTitle] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [hint, setHint] = useState<string | null>(null);
 
   const load = async () => {
     try {
-      const [p, m, c, r, context, f, tp, pkgs] = await Promise.all([
+      const [p, m, c, r, context, f, tp, pkgs, hyps] = await Promise.all([
         getPatient(patientId),
         getCaseMemory(patientId),
         getPatientConsents(patientId),
@@ -63,6 +76,7 @@ export default function PatientHubPage({
         getCurrentFormulation(patientId),
         getCurrentTreatmentPlan(patientId),
         getPackages(patientId),
+        clinicalAccess ? getHypotheses(patientId) : Promise.resolve([]),
       ]);
       setPatient(p);
       setMemory(m);
@@ -72,6 +86,7 @@ export default function PatientHubPage({
       setFormulation(f);
       setPlan(tp);
       setPackages(pkgs);
+      setHypotheses(hyps);
       const body = (f?.body as { therapeutic_focus?: string } | undefined) || {};
       setFocusDraft(body.therapeutic_focus || "");
       setPlanSummary(String(tp?.initial_formulation_summary || ""));
@@ -83,7 +98,15 @@ export default function PatientHubPage({
 
   useEffect(() => {
     void load();
-  }, [patientId]);
+  }, [patientId, clinicalAccess]);
+
+  useEffect(() => {
+    if (initialFocus === "formulacao") {
+      formulationRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else if (initialFocus === "prontuario") {
+      recordsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [initialFocus, patient]);
 
   if (error && !patient) {
     return (
@@ -158,7 +181,10 @@ export default function PatientHubPage({
 
       {clinicalAccess && (
         <>
-      <section className="rounded-2xl border border-emerald-200 bg-white/70 p-4 space-y-3">
+      <section
+        ref={formulationRef}
+        className="rounded-2xl border border-emerald-200 bg-white/70 p-4 space-y-3"
+      >
         <h2 className="text-sm font-semibold uppercase tracking-wide text-emerald-700">
           Formulação viva
         </h2>
@@ -275,6 +301,94 @@ export default function PatientHubPage({
         </div>
       </section>
 
+      <section className="rounded-2xl border border-emerald-200 bg-white/70 p-4 space-y-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-emerald-700">
+          Hipóteses clínicas
+        </h2>
+        <form
+          className="flex gap-2"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (!newHypothesis.trim()) return;
+            await createHypothesis(patientId, newHypothesis.trim());
+            setNewHypothesis("");
+            setHint("Hipótese registrada.");
+            await load();
+          }}
+        >
+          <input
+            className="w-full rounded-xl border px-3 py-2 text-sm"
+            placeholder="Nova hipótese clínica"
+            value={newHypothesis}
+            onChange={(e) => setNewHypothesis(e.target.value)}
+          />
+          <button className="rounded-xl border px-4 py-2 text-sm" type="submit">
+            Adicionar
+          </button>
+        </form>
+        <div className="space-y-2">
+          {hypotheses.map((h) => (
+            <div
+              key={h.id}
+              className="flex flex-wrap items-start justify-between gap-2 rounded-xl border px-3 py-2 text-sm"
+            >
+              <div>
+                <div>{h.statement}</div>
+                <div className="text-xs text-emerald-800/70">
+                  {h.strength || "active"}
+                  {h.pending_review ? " · pendente revisão IA" : ""}
+                  {h.created_by ? ` · ${h.created_by}` : ""}
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {h.pending_review && (
+                  <button
+                    className="rounded-lg border px-2 py-1 text-xs"
+                    onClick={async () => {
+                      await acceptHypothesis(h.id);
+                      setHint("Hipótese IA aceita.");
+                      await load();
+                    }}
+                  >
+                    Aceitar
+                  </button>
+                )}
+                <button
+                  className="rounded-lg border px-2 py-1 text-xs"
+                  onClick={async () => {
+                    await updateHypothesisStrength(h.id, "strengthened");
+                    await load();
+                  }}
+                >
+                  Fortalecer
+                </button>
+                <button
+                  className="rounded-lg border px-2 py-1 text-xs"
+                  onClick={async () => {
+                    await updateHypothesisStrength(h.id, "weakened");
+                    await load();
+                  }}
+                >
+                  Enfraquecer
+                </button>
+                <button
+                  className="rounded-lg border border-red-200 px-2 py-1 text-xs text-red-700"
+                  onClick={async () => {
+                    await updateHypothesisStrength(h.id, "retired");
+                    await load();
+                  }}
+                >
+                  Aposentar
+                </button>
+              </div>
+            </div>
+          ))}
+          {hypotheses.length === 0 && (
+            <p className="text-sm text-emerald-800/70">Nenhuma hipótese registrada.</p>
+          )}
+        </div>
+      </section>
+
       <section className="rounded-2xl border border-emerald-200 bg-white/70 p-4">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-emerald-700">
           Memória do caso
@@ -287,6 +401,18 @@ export default function PatientHubPage({
                 {m.pending_review ? " · sugestão IA" : ""}
               </div>
               <div>{String(m.content)}</div>
+              {Array.isArray(m.provenance) &&
+                (m.provenance as { deep_link?: string; resource_type?: string }[]).map((p, i) =>
+                  p.deep_link ? (
+                    <button
+                      key={i}
+                      className="mt-1 mr-2 text-xs text-emerald-700 underline"
+                      onClick={() => onNavigateDeepLink?.(String(p.deep_link))}
+                    >
+                      Fonte: {p.resource_type || "origem"}
+                    </button>
+                  ) : null,
+                )}
               {m.pending_review === true && (
                 <button
                   className="mt-2 text-xs underline"
@@ -391,7 +517,10 @@ export default function PatientHubPage({
         </button>
       </section>
 
-      <section className="rounded-2xl border border-emerald-200 bg-white/70 p-4">
+      <section
+        ref={recordsRef}
+        className="rounded-2xl border border-emerald-200 bg-white/70 p-4"
+      >
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-emerald-700">
           Prontuário recente
         </h2>

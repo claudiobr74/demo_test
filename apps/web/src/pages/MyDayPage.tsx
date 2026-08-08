@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
+import ConfirmationQueuePanel from "../components/ConfirmationQueuePanel";
 import {
   completeTask,
   createCharge,
   createTask,
+  enqueueConfirmation,
   getToday,
   prepareConfirmationCopy,
   prepareSessionContext,
@@ -13,12 +15,14 @@ import {
 type Props = {
   onOpenSession: (sessionId: string) => void;
   onPreparePatient?: (patientId: string) => void;
+  onNavigateDeepLink?: (link: string) => void;
   clinicalAccess?: boolean;
 };
 
 export default function MyDayPage({
   onOpenSession,
   onPreparePatient,
+  onNavigateDeepLink,
   clinicalAccess = true,
 }: Props) {
   const [data, setData] = useState<Record<string, unknown> | null>(null);
@@ -27,6 +31,7 @@ export default function MyDayPage({
   const [prep, setPrep] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
   const [newTask, setNewTask] = useState("");
+  const [queueKey, setQueueKey] = useState(0);
 
   const load = async () => {
     setLoading(true);
@@ -206,6 +211,16 @@ export default function MyDayPage({
                 >
                   Copiar mensagem
                 </button>
+                <button
+                  className="rounded-lg border px-3 py-1.5 text-sm"
+                  onClick={async () => {
+                    await enqueueConfirmation(String(a.id));
+                    setQueueKey((k) => k + 1);
+                    setHint("Confirmação enfileirada (stub multi-canal).");
+                  }}
+                >
+                  Enfileirar
+                </button>
                 {clinicalAccess && (
                   <button
                     className="rounded-lg border px-3 py-1.5 text-sm"
@@ -316,7 +331,17 @@ export default function MyDayPage({
               key={String(t.id)}
               className="mb-2 flex items-center justify-between gap-2 rounded-xl border px-3 py-3"
             >
-              <div className="text-sm font-medium">{String(t.title || "")}</div>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium">{String(t.title || "")}</div>
+                {Boolean(t.deep_link) && (
+                  <button
+                    className="mt-1 text-xs text-emerald-700 underline"
+                    onClick={() => onNavigateDeepLink?.(String(t.deep_link))}
+                  >
+                    Abrir origem
+                  </button>
+                )}
+              </div>
               <button
                 className="rounded-lg border px-3 py-1.5 text-sm"
                 onClick={async () => {
@@ -330,6 +355,8 @@ export default function MyDayPage({
           ))
         )}
       </section>
+
+      <ConfirmationQueuePanel refreshKey={queueKey} />
     </div>
   );
 }

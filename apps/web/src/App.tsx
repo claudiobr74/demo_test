@@ -1,4 +1,4 @@
-import { Suspense, lazy, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { motion } from "motion/react";
 import {
   canAccessClinical,
@@ -10,6 +10,7 @@ import {
   type SerenaUser,
 } from "./lib/auth";
 import { setupAppWorkspace } from "./lib/workspace";
+import { currentHashTarget, parseDeepLink, toHash, type NavTarget } from "./lib/navigation";
 import Sidebar, { type TabId } from "./components/Sidebar";
 import { FullLogo } from "./components/Logo";
 
@@ -32,12 +33,62 @@ export default function App() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [patientId, setPatientId] = useState<string | null>(null);
+  const [hubFocus, setHubFocus] = useState<"prontuario" | "formulacao" | "hub" | undefined>();
   const [supervisorPatientId, setSupervisorPatientId] = useState<string | null>(null);
   const [email, setEmail] = useState("dra.marina@serenapsi.dev");
   const [password, setPassword] = useState("SerenaPsi!dev1");
   const [keepSignedIn, setKeepSignedIn] = useState(true);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loggingIn, setLoggingIn] = useState(false);
+
+  const applyNav = (target: NavTarget) => {
+    if (target.type === "session") {
+      setPatientId(null);
+      setSessionId(target.sessionId);
+      return;
+    }
+    if (target.type === "patient") {
+      setSessionId(null);
+      setPatientId(target.patientId);
+      setHubFocus(target.focus || "hub");
+      setTab("pacientes");
+      return;
+    }
+    setSessionId(null);
+    setPatientId(null);
+    setHubFocus(undefined);
+    setTab(target.tab);
+  };
+
+  const goDeepLink = (link: string | null | undefined) => {
+    const target = parseDeepLink(link);
+    if (!target) return;
+    const hash = toHash(target);
+    const next = hash.startsWith("#") ? hash.slice(1) : hash;
+    if (window.location.hash.replace(/^#/, "") !== next) {
+      window.location.hash = next;
+    }
+    applyNav(target);
+  };
+
+  useEffect(() => {
+    if (!user) return;
+    const fromHash = currentHashTarget();
+    if (fromHash) applyNav(fromHash);
+    const onHash = () => {
+      const t = currentHashTarget();
+      if (t) applyNav(t);
+    };
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    void navigator.serviceWorker.register("/sw.js").catch(() => {
+      /* ignore SW failures in dev */
+    });
+  }, []);
 
   if (!user) {
     return (
@@ -116,7 +167,13 @@ export default function App() {
   if (sessionId) {
     return (
       <Suspense fallback={<p className="p-8">Carregando sessão…</p>}>
-        <SessionPage sessionId={sessionId} onClose={() => setSessionId(null)} />
+        <SessionPage
+          sessionId={sessionId}
+          onClose={() => {
+            setSessionId(null);
+            window.location.hash = "meudia";
+          }}
+        />
       </Suspense>
     );
   }
@@ -127,11 +184,19 @@ export default function App() {
         <PatientHubPage
           patientId={patientId}
           clinicalAccess={canAccessClinical(user.role_key, user.permissions || [])}
-          onClose={() => setPatientId(null)}
+          initialFocus={hubFocus}
+          onClose={() => {
+            setPatientId(null);
+            setHubFocus(undefined);
+            window.location.hash = "pacientes";
+          }}
           onOpenSession={(id) => {
             setPatientId(null);
+            setHubFocus(undefined);
             setSessionId(id);
+            window.location.hash = `sessoes/${id}`;
           }}
+          onNavigateDeepLink={goDeepLink}
         />
       </Suspense>
     );
@@ -145,12 +210,17 @@ export default function App() {
         return (
           <MyDayPage
             clinicalAccess={clinicalAccess}
-            onOpenSession={setSessionId}
+            onOpenSession={(id) => {
+              setSessionId(id);
+              window.location.hash = `sessoes/${id}`;
+            }}
+            onNavigateDeepLink={goDeepLink}
             onPreparePatient={
               clinicalAccess
                 ? (id) => {
                     setSupervisorPatientId(id);
                     setTab("supervisor");
+                    window.location.hash = "supervisor";
                   }
                 : undefined
             }
@@ -160,7 +230,10 @@ export default function App() {
         return (
           <PatientsPage
             clinicalAccess={clinicalAccess}
-            onOpenPatient={setPatientId}
+            onOpenPatient={(id) => {
+              setPatientId(id);
+              window.location.hash = `pacientes/${id}`;
+            }}
           />
         );
       case "agenda":
@@ -201,7 +274,10 @@ export default function App() {
     <div className="min-h-screen md:pl-64">
       <Sidebar
         currentTab={tab}
-        setCurrentTab={setTab}
+        setCurrentTab={(next) => {
+          setTab(next);
+          window.location.hash = next;
+        }}
         userName={user.full_name}
         roleLabel={mapRoleLabel(user.role_key)}
         roleKey={user.role_key}

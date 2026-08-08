@@ -47,8 +47,8 @@
 - Agenda React: visão semana + DnD + ±15 min; documentos com edição de rascunho (feito)
 - Supervisor/Sessão: aceite de sugestões IA → memória/notas (feito)
 - Cadastro editável + gates de secretaria no hub/Meu Dia (feito)
+- Hipóteses no hub; fila de confirmações; deep-links; agenda mês; PWA SW (feito)
 - Continuar portando detalhes do `src/legacy/` (ActiveSession áudio/transcrição — P2)
-- PWA: service worker (manifest/prompt já existem)
 
 ### P2/P3 restante
 - Transcrição opcional → proposta → revisão humana (não vira prontuário sozinha)
