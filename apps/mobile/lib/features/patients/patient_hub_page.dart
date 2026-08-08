@@ -30,6 +30,15 @@ final patientRecordsProvider =
       .toList();
 });
 
+final patientMemoryProvider =
+    FutureProvider.autoDispose.family<List<Map<String, dynamic>>, String>((ref, id) async {
+  final client = ref.watch(apiClientProvider);
+  final data = await client.get('/api/v1/case-memory/patients/$id');
+  return (data['items'] as List? ?? [])
+      .map((e) => Map<String, dynamic>.from(e as Map))
+      .toList();
+});
+
 class PatientHubPage extends ConsumerWidget {
   const PatientHubPage({super.key, required this.patientId});
 
@@ -40,6 +49,7 @@ class PatientHubPage extends ConsumerWidget {
     final patient = ref.watch(patientProvider(patientId));
     final consents = ref.watch(patientConsentsProvider(patientId));
     final records = ref.watch(patientRecordsProvider(patientId));
+    final memory = ref.watch(patientMemoryProvider(patientId));
 
     return patient.when(
       loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
@@ -66,6 +76,11 @@ class PatientHubPage extends ConsumerWidget {
                 runSpacing: 8,
                 children: [
                   FilledButton.icon(
+                    onPressed: () => context.push('/pacientes/$patientId/preparar'),
+                    icon: const Icon(Icons.auto_stories_outlined),
+                    label: const Text('Preparar sessão'),
+                  ),
+                  OutlinedButton.icon(
                     onPressed: () => context.push('/sessoes/nova?patientId=$patientId'),
                     icon: const Icon(Icons.play_arrow_outlined),
                     label: const Text('Nova sessão'),
@@ -113,7 +128,18 @@ class PatientHubPage extends ConsumerWidget {
                     _kv(context, 'Abordagem', data['framework']?.toString()),
                     _kv(context, 'Telefone', data['phone']?.toString()),
                     _kv(context, 'E-mail', data['email']?.toString()),
+                    if (data['session_fee'] != null)
+                      _kv(context, 'Valor sessão', 'R\$ ${data['session_fee']}'),
                   ],
+                ),
+              ),
+              const SizedBox(height: 20),
+              SerenaSection(
+                title: 'Memória do caso',
+                child: memory.when(
+                  loading: () => const LinearProgressIndicator(),
+                  error: (e, _) => Text(e.toString()),
+                  data: (items) => _CaseMemoryBlock(patientId: patientId, items: items),
                 ),
               ),
               const SizedBox(height: 20),
@@ -171,6 +197,137 @@ class PatientHubPage extends ConsumerWidget {
       ),
     );
   }
+}
+
+class _CaseMemoryBlock extends ConsumerWidget {
+  const _CaseMemoryBlock({required this.patientId, required this.items});
+  final String patientId;
+  final List<Map<String, dynamic>> items;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (items.isEmpty)
+          Text(
+            'Nenhuma memória registrada. Fatos e hipóteses ficam aqui — a IA só sugere.',
+            style: Theme.of(context).textTheme.bodyMedium,
+          )
+        else
+          for (final m in items.take(8))
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _kindLabel(m['kind'] as String?),
+                          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                                color: SerenaColors.sageDark,
+                              ),
+                        ),
+                        Text(m['content'] as String? ?? ''),
+                        if (m['pending_review'] == true)
+                          Text(
+                            'Sugestão da IA — aguardando aceite',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: SerenaColors.inkSoft,
+                                ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  if (m['pending_review'] == true)
+                    TextButton(
+                      onPressed: () async {
+                        await ref.read(apiClientProvider).post(
+                          '/api/v1/case-memory/${m['id']}/accept',
+                        );
+                        ref.invalidate(patientMemoryProvider(patientId));
+                      },
+                      child: const Text('Aceitar'),
+                    ),
+                ],
+              ),
+            ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: () => _addMemory(context, ref),
+          icon: const Icon(Icons.add),
+          label: const Text('Adicionar memória'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _addMemory(BuildContext context, WidgetRef ref) async {
+    final contentCtrl = TextEditingController();
+    var kind = 'observation';
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setLocal) {
+            final bottom = MediaQuery.viewInsetsOf(ctx).bottom;
+            return Padding(
+              padding: EdgeInsets.fromLTRB(24, 8, 24, 24 + bottom),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text('Nova memória', style: Theme.of(ctx).textTheme.headlineMedium),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: kind,
+                    items: const [
+                      DropdownMenuItem(value: 'fact', child: Text('Fato')),
+                      DropdownMenuItem(value: 'observation', child: Text('Observação')),
+                      DropdownMenuItem(value: 'hypothesis', child: Text('Hipótese')),
+                    ],
+                    onChanged: (v) => setLocal(() => kind = v ?? 'observation'),
+                    decoration: const InputDecoration(labelText: 'Tipo'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: contentCtrl,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      labelText: 'Conteúdo',
+                      alignLabelWithHint: true,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: const Text('Salvar'),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+    if (ok != true || contentCtrl.text.trim().isEmpty) return;
+    await ref.read(apiClientProvider).post(
+      '/api/v1/case-memory/patients/$patientId',
+      body: {'kind': kind, 'content': contentCtrl.text.trim()},
+    );
+    ref.invalidate(patientMemoryProvider(patientId));
+  }
+
+  String _kindLabel(String? k) => switch (k) {
+        'fact' => 'Fato',
+        'hypothesis' => 'Hipótese',
+        _ => 'Observação',
+      };
 }
 
 class _ConsentsBlock extends ConsumerWidget {

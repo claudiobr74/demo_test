@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -243,6 +244,18 @@ class _AppointmentCard extends ConsumerWidget {
                   child: const Text('Iniciar sessão'),
                 ),
                 OutlinedButton(
+                  onPressed: () => context.push('/pacientes/${item['patient_id']}/preparar'),
+                  child: const Text('Preparar'),
+                ),
+                OutlinedButton(
+                  onPressed: () => _reschedule(context, ref),
+                  child: const Text('Reagendar'),
+                ),
+                OutlinedButton(
+                  onPressed: () => _copyConfirmation(context, ref),
+                  child: const Text('Mensagem'),
+                ),
+                OutlinedButton(
                   onPressed: () => _status(ref, 'no_show'),
                   child: const Text('Falta'),
                 ),
@@ -263,6 +276,94 @@ class _AppointmentCard extends ConsumerWidget {
     await client.post(
       '/api/v1/appointments/${item['id']}/status',
       body: {'status': status, if (reason != null) 'reason': reason},
+    );
+    onChanged();
+  }
+
+  Future<void> _copyConfirmation(BuildContext context, WidgetRef ref) async {
+    try {
+      final data = await ref.read(apiClientProvider).get(
+            '/api/v1/appointments/${item['id']}/confirmation-message',
+          );
+      final message = data['message'] as String? ?? '';
+      await Clipboard.setData(ClipboardData(text: message));
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Mensagem copiada — cole no WhatsApp ou SMS.')),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    }
+  }
+
+  Future<void> _reschedule(BuildContext context, WidgetRef ref) async {
+    final starts = DateTime.tryParse(item['starts_at'] as String? ?? '')?.toLocal() ??
+        DateTime.now().add(const Duration(hours: 1));
+    var next = starts;
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setLocal) {
+            final bottom = MediaQuery.viewInsetsOf(ctx).bottom;
+            return Padding(
+              padding: EdgeInsets.fromLTRB(24, 8, 24, 24 + bottom),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text('Reagendar', style: Theme.of(ctx).textTheme.headlineMedium),
+                  const SizedBox(height: 8),
+                  Text(
+                    item['patient_display_name'] as String? ?? '',
+                    style: Theme.of(ctx).textTheme.bodyLarge,
+                  ),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Novo horário'),
+                    subtitle: Text(DateFormat('dd/MM/yyyy HH:mm').format(next)),
+                    trailing: const Icon(Icons.edit_calendar_outlined),
+                    onTap: () async {
+                      final d = await showDatePicker(
+                        context: ctx,
+                        initialDate: next,
+                        firstDate: DateTime.now().subtract(const Duration(days: 1)),
+                        lastDate: DateTime.now().add(const Duration(days: 365)),
+                      );
+                      if (d == null) return;
+                      if (!ctx.mounted) return;
+                      final t = await showTimePicker(
+                        context: ctx,
+                        initialTime: TimeOfDay.fromDateTime(next),
+                      );
+                      if (t == null) return;
+                      setLocal(() {
+                        next = DateTime(d.year, d.month, d.day, t.hour, t.minute);
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: const Text('Salvar novo horário'),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+    if (ok != true) return;
+    await ref.read(apiClientProvider).post(
+      '/api/v1/appointments/${item['id']}/reschedule',
+      body: {
+        'starts_at': next.toUtc().toIso8601String(),
+        'version': item['version'],
+      },
     );
     onChanged();
   }

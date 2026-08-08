@@ -136,3 +136,36 @@ class ConsentDecisionRequest(APIModel):
     status: str
     method: str | None = "manual"
     notes: str | None = None
+
+
+class ChargeCreateRequest(APIModel):
+    patient_id: UUID
+    amount: Decimal
+    origin: str = "adjustment"
+    origin_id: UUID | None = None
+    due_date: date | None = None
+    description: str | None = None
+    idempotency_key: str | None = None
+
+
+class PaymentCreateRequest(APIModel):
+    charge_id: UUID
+    amount: Decimal
+    method: str = "pix"
+    discount: Decimal | None = None
+    surcharge: Decimal | None = None
+    notes: str | None = None
+    idempotency_key: str | None = None
+
+
+class CaseMemoryCreateRequest(APIModel):
+    kind: str = "observation"
+    content: str = Field(min_length=1)
+    epistemology: str | None = None
+    provenance: list[dict[str, Any]] | None = None
+    framework: str | None = None
+    source: str = "professional"
+
+
+class CaseMemoryStatusRequest(APIModel):
+    status: str

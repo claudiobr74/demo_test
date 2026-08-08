@@ -21,6 +21,7 @@ from app.infrastructure.db.models_identity import (  # noqa: F401
     Organization,
     User,
 )
+from app.infrastructure.db.models_memory import CaseMemoryEntry  # noqa: F401
 from app.infrastructure.db.models_ops import (  # noqa: F401
     AiFeedback,
     AiOutput,
@@ -54,4 +55,5 @@ __all__ = [
     "Payment",
     "AiRequest",
     "AiOutput",
+    "CaseMemoryEntry",
 ]

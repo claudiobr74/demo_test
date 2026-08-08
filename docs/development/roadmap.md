@@ -9,21 +9,25 @@
 - Consentimentos versionados (API + hub)
 - Prontuário longitudinal (lista)
 - Flutter: Agenda dia/semana, sessão com autosave, hub com Supervisor
-- Gateway `:3000`, testes, CI, ADRs
+- App servido na mesma origem `:8000` da API
+- Financeiro: cobrança ao fechar sessão, pagamentos, painel
+- Case Memory (fatos/observações/hipóteses + aceite de sugestão IA)
+- Preparar sessão (contexto + memória do caso)
+- Reagendar na agenda + mensagem de confirmação (copiar)
 
 ## Próximo
 
 ### P1 restante
-- Agenda mês + drag-and-drop + recorrência
-- Painel lateral de detalhes / reagendar na UI
+- Agenda mês + drag-and-drop
+- Recorrência de atendimentos
 
 ### P2
-- Case Memory + proveniência
 - Providers LLM reais
 - Living formulation
+- Proveniência enriquecida na memória
 
 ### P3
-- Financeiro, documentos, confirmações multi-canal
+- Documentos, confirmações multi-canal (envio real)
 
 ### P4–P5
 - RAG, motor longitudinal, planos comerciais

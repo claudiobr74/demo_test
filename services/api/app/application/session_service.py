@@ -158,6 +158,25 @@ class SessionService:
             await self.db.flush()
             record_dto = {"id": str(record.id), "status": record.status}
 
+        charge_dto = None
+        if patient and self.auth.has(Permission.FINANCE_WRITE):
+            from app.application.finance_service import FinanceService
+
+            finance = FinanceService(self.db, self.auth)
+            charge = await finance.ensure_session_charge(
+                patient_id=session.patient_id,
+                session_id=session.id,
+                amount=patient.session_fee,
+                description=f"Sessão · {patient.display_name}",
+            )
+            if charge is not None:
+                await self.db.flush()
+                charge_dto = {
+                    "id": str(charge.id),
+                    "amount": str(charge.amount),
+                    "status": charge.status,
+                }
+
         await write_audit(
             self.db,
             organization_id=self.auth.organization_id,
@@ -168,7 +187,11 @@ class SessionService:
             request_id=self.auth.request_id,
         )
         await self.db.commit()
-        return {**self._to_dto(session, patient), "clinical_record": record_dto}
+        return {
+            **self._to_dto(session, patient),
+            "clinical_record": record_dto,
+            "charge": charge_dto,
+        }
 
     async def mark_pending_closure(self, session_id: uuid.UUID) -> dict:
         self.auth.require(Permission.SESSION_WRITE)
@@ -223,6 +246,14 @@ class SessionService:
         ).scalars().all()
 
         last = last_records[0] if last_records else None
+        memory: dict = {"facts": [], "observations": [], "hypotheses": []}
+        try:
+            from app.application.case_memory_service import CaseMemoryService
+
+            memory = await CaseMemoryService(self.db, self.auth).context_bundle(patient_id)
+        except Exception:
+            memory = {"facts": [], "observations": [], "hypotheses": []}
+
         return {
             "patient": {
                 "id": str(patient.id),
@@ -238,6 +269,16 @@ class SessionService:
             }
             if last
             else None,
+            "recent_records": [
+                {
+                    "id": str(r.id),
+                    "recorded_at": r.recorded_at.isoformat(),
+                    "focus": r.focus,
+                    "evolution_preview": (r.evolution or "")[:160],
+                }
+                for r in last_records
+            ],
+            "case_memory": memory,
             "active_tasks": [{"id": str(t.id), "title": t.title} for t in open_tasks],
             "suggested_focus": last.planning if last else None,
             "supervisor_action": "Abrir Supervisor IA — Preparar próxima sessão",

@@ -11,6 +11,9 @@ from app.api.v1.schemas import (
     AppointmentStatusRequest,
 )
 from app.application.appointment_service import AppointmentService
+from app.application.confirmation_messages import build_confirmation_message
+from app.infrastructure.db.models_clinical import Patient
+from app.infrastructure.db.models_identity import Organization
 from app.infrastructure.db.session import get_db
 
 router = APIRouter()
@@ -69,4 +72,22 @@ async def reschedule(
         starts_at=body.starts_at,
         duration_minutes=body.duration_minutes,
         expected_version=body.version,
+    )
+
+
+@router.get("/{appointment_id}/confirmation-message")
+async def confirmation_message(
+    appointment_id: UUID,
+    auth: AuthContext = Depends(get_current_auth),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    service = AppointmentService(db, auth)
+    appt = await service._get_owned(appointment_id)
+    patient = await db.get(Patient, appt.patient_id)
+    org = await db.get(Organization, auth.organization_id)
+    return build_confirmation_message(
+        patient=patient,  # type: ignore[arg-type]
+        appointment=appt,
+        professional_name=auth.user.full_name,
+        clinic_name=org.name if org else None,
     )

@@ -4,9 +4,11 @@ import 'package:go_router/go_router.dart';
 
 import '../../features/appointments/agenda_page.dart';
 import '../../features/auth/login_page.dart';
+import '../../features/finance/finance_page.dart';
 import '../../features/patients/clinical_records_page.dart';
 import '../../features/patients/patient_hub_page.dart';
 import '../../features/patients/patients_page.dart';
+import '../../features/sessions/prepare_session_page.dart';
 import '../../features/sessions/session_page.dart';
 import '../../features/shell/app_shell.dart';
 import '../../features/today/today_page.dart';
@@ -57,9 +59,19 @@ final routerProvider = Provider<GoRouter>((ref) {
                       patientId: state.pathParameters['id']!,
                     ),
                   ),
+                  GoRoute(
+                    path: 'preparar',
+                    builder: (context, state) => PrepareSessionPage(
+                      patientId: state.pathParameters['id']!,
+                    ),
+                  ),
                 ],
               ),
             ],
+          ),
+          GoRoute(
+            path: '/financeiro',
+            pageBuilder: (context, state) => const NoTransitionPage(child: FinancePage()),
           ),
           GoRoute(
             path: '/sessoes/nova',

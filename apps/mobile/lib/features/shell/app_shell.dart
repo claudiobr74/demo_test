@@ -39,11 +39,13 @@ const _items = [
   _NavItem('Meu Dia', Icons.wb_twilight_outlined, '/hoje'),
   _NavItem('Agenda', Icons.calendar_today_outlined, '/agenda'),
   _NavItem('Pacientes', Icons.people_outline, '/pacientes'),
+  _NavItem('Financeiro', Icons.payments_outlined, '/financeiro'),
 ];
 
 int _indexFor(String location) {
   if (location.startsWith('/agenda')) return 1;
   if (location.startsWith('/pacientes')) return 2;
+  if (location.startsWith('/financeiro')) return 3;
   return 0;
 }
 
