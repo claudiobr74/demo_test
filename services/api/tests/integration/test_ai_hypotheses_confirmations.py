@@ -72,6 +72,16 @@ async def test_supervisor_persists_observability_and_hypotheses(client: AsyncCli
     # offline assist may import from case memory hypotheses
     assert isinstance(hyps.json()["items"], list)
 
+    usage = await client.get("/api/v1/ai/usage?days=30", headers=headers)
+    assert usage.status_code == 200, usage.text
+    panel = usage.json()
+    assert panel["total_requests"] >= 1
+    assert "avg_latency_ms" in panel
+    assert "estimated_cost_usd" in panel
+    assert "by_provider" in panel
+    assert "by_task" in panel
+    assert "feedback" in panel
+
 
 @pytest.mark.asyncio
 async def test_clinical_hypothesis_lifecycle(client: AsyncClient):

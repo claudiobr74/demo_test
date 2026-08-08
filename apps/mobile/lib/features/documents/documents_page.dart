@@ -116,6 +116,7 @@ class DocumentsPage extends ConsumerWidget {
                                     const SnackBar(content: Text('Texto copiado.')),
                                   );
                                 },
+                                onExport: (fmt) => _exportDoc(context, ref, d['id'] as String, fmt),
                               ),
                             ),
                         ],
@@ -193,6 +194,37 @@ class DocumentsPage extends ConsumerWidget {
     await ref.read(apiClientProvider).post('/api/v1/documents', body: body);
     ref.invalidate(documentsProvider);
   }
+
+  Future<void> _exportDoc(
+    BuildContext context,
+    WidgetRef ref,
+    String documentId,
+    String format,
+  ) async {
+    try {
+      final data = await ref.read(apiClientProvider).get(
+            '/api/v1/documents/$documentId/export?format=$format',
+          );
+      final content = data['content'] as String? ?? '';
+      final filename = data['filename'] as String? ?? 'documento';
+      final hint = data['print_hint'] as String?;
+      await Clipboard.setData(ClipboardData(text: content));
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            format == 'txt'
+                ? 'Texto de $filename copiado.'
+                : '${hint ?? 'HTML copiado.'} Arquivo: $filename',
+          ),
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    }
+  }
 }
 
 class _DocTile extends StatelessWidget {
@@ -200,11 +232,13 @@ class _DocTile extends StatelessWidget {
     required this.doc,
     required this.onFinalize,
     required this.onCopy,
+    required this.onExport,
   });
 
   final Map<String, dynamic> doc;
   final VoidCallback onFinalize;
   final VoidCallback onCopy;
+  final void Function(String format) onExport;
 
   @override
   Widget build(BuildContext context) {
@@ -232,8 +266,15 @@ class _DocTile extends StatelessWidget {
           const SizedBox(height: 10),
           Wrap(
             spacing: 8,
+            runSpacing: 8,
             children: [
               OutlinedButton(onPressed: onCopy, child: const Text('Copiar')),
+              OutlinedButton(onPressed: () => onExport('txt'), child: const Text('Exportar TXT')),
+              OutlinedButton(onPressed: () => onExport('html'), child: const Text('Exportar HTML')),
+              OutlinedButton(
+                onPressed: () => onExport('pdf'),
+                child: const Text('Para PDF'),
+              ),
               if (status != 'finalized')
                 FilledButton(onPressed: onFinalize, child: const Text('Finalizar')),
             ],

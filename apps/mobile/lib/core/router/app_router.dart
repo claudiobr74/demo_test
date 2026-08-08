@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../features/ai/ai_usage_page.dart';
 import '../../features/appointments/agenda_page.dart';
 import '../../features/auth/login_page.dart';
 import '../../features/documents/documents_page.dart';
@@ -91,6 +92,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/documentos',
             pageBuilder: (context, state) => const NoTransitionPage(child: DocumentsPage()),
+          ),
+          GoRoute(
+            path: '/ia',
+            pageBuilder: (context, state) => const NoTransitionPage(child: AiUsagePage()),
           ),
           GoRoute(
             path: '/sessoes/nova',

@@ -12,6 +12,15 @@ from app.infrastructure.db.session import get_db
 router = APIRouter()
 
 
+@router.get("/usage")
+async def usage_summary(
+    days: int = Query(30, ge=1, le=90),
+    auth: AuthContext = Depends(require_permissions(Permission.AI_SUPERVISION_USE)),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    return await AiObservabilityService(db, auth).usage_summary(days=days)
+
+
 @router.get("/history")
 async def recent_history(
     limit: int = Query(30, ge=1, le=50),

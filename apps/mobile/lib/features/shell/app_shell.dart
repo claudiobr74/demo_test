@@ -41,6 +41,7 @@ const _items = [
   _NavItem('Pacientes', Icons.people_outline, '/pacientes'),
   _NavItem('Financeiro', Icons.payments_outlined, '/financeiro'),
   _NavItem('Documentos', Icons.description_outlined, '/documentos'),
+  _NavItem('IA', Icons.auto_awesome_outlined, '/ia'),
 ];
 
 int _indexFor(String location) {
@@ -48,6 +49,7 @@ int _indexFor(String location) {
   if (location.startsWith('/pacientes')) return 2;
   if (location.startsWith('/financeiro')) return 3;
   if (location.startsWith('/documentos')) return 4;
+  if (location.startsWith('/ia')) return 5;
   return 0;
 }
 

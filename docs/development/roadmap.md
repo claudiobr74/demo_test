@@ -24,19 +24,21 @@
 - Observabilidade AI (AiRequest/AiOutput + feedback)
 - Hipóteses clínicas ligadas à formulação (aceite de sugestões)
 - Fila de confirmação multi-canal (stub de entrega)
+- Painel de custo/latência AI da organização (API + Flutter `/ia`)
+- Export de documentos (TXT/HTML + stub “para PDF” via impressão)
+- Grade diária na agenda com arrastar-e-soltar entre horários
 
 ## Próximo
 
 ### P1 restante
-- Drag-and-drop visual completo na agenda
+- Refinar DnD (semana, conflitos visuais, snap de minutos)
 
 ### P2
-- Painel de custo/latência AI na organização
 - Deep-links de proveniência → sessão/prontuário
 
 ### P3
 - Providers reais WhatsApp/SMS/email
-- PDF/export e armazenamento de documentos
+- PDF binário (WeasyPrint) e armazenamento de documentos
 
 ### P4–P5
 - RAG, motor longitudinal, planos comerciais

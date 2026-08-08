@@ -59,3 +59,13 @@ async def finalize_document(
     if not body.confirm:
         return await DocumentService(db, auth).get(document_id)
     return await DocumentService(db, auth).finalize(document_id)
+
+
+@router.get("/{document_id}/export")
+async def export_document(
+    document_id: UUID,
+    format: str = Query("html", alias="format"),
+    auth: AuthContext = Depends(get_current_auth),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    return await DocumentService(db, auth).export_payload(document_id, fmt=format)

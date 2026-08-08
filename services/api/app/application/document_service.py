@@ -189,6 +189,88 @@ class DocumentService:
         await self.db.commit()
         return self._doc_dto(doc)
 
+    async def export_payload(self, document_id: uuid.UUID, *, fmt: str = "html") -> dict:
+        """Export printable artifact — HTML/text now; PDF binary storage later."""
+        self.auth.require(Permission.DOCUMENT_READ)
+        doc = await self._owned_doc(document_id)
+        fmt = (fmt or "html").lower()
+        if fmt not in {"html", "txt", "pdf"}:
+            raise ValidationAppError("Formato de exportação inválido.")
+
+        patient_name = ""
+        if doc.patient_id:
+            patient = await self.db.get(Patient, doc.patient_id)
+            if patient and patient.organization_id == self.auth.organization_id:
+                patient_name = patient.display_name
+
+        generated_at = datetime.now(UTC).astimezone().strftime("%d/%m/%Y %H:%M")
+        if fmt == "txt":
+            content = (
+                f"{doc.title}\n"
+                f"{'=' * len(doc.title)}\n"
+                f"Paciente: {patient_name or '—'}\n"
+                f"Status: {doc.status}\n"
+                f"Gerado em: {generated_at}\n\n"
+                f"{doc.body}\n"
+            )
+            filename = f"{_slug(doc.title)}.txt"
+            media_type = "text/plain; charset=utf-8"
+        else:
+            # html and pdf (print-ready HTML — browser/print-to-PDF)
+            escaped_body = (
+                doc.body.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\n", "<br/>")
+            )
+            content = f"""<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8"/>
+  <title>{doc.title}</title>
+  <style>
+    body {{ font-family: Georgia, serif; max-width: 720px; margin: 40px auto; color: #2c3338; line-height: 1.5; }}
+    h1 {{ font-size: 1.6rem; color: #4f7364; }}
+    .meta {{ color: #5a646c; font-size: 0.95rem; margin-bottom: 24px; }}
+    .body {{ white-space: normal; }}
+    @media print {{ body {{ margin: 16mm; }} }}
+  </style>
+</head>
+<body>
+  <h1>{doc.title}</h1>
+  <div class="meta">
+    Paciente: {patient_name or "—"}<br/>
+    Status: {doc.status}<br/>
+    Gerado em: {generated_at}<br/>
+    SerenaPsi — documento do consultório
+  </div>
+  <div class="body">{escaped_body}</div>
+</body>
+</html>
+"""
+            filename = f"{_slug(doc.title)}.html"
+            media_type = "text/html; charset=utf-8"
+
+        await write_audit(
+            self.db,
+            organization_id=self.auth.organization_id,
+            actor_user_id=self.auth.user_id,
+            action="document.exported",
+            resource_type="document",
+            resource_id=str(doc.id),
+            request_id=self.auth.request_id,
+            metadata={"format": fmt},
+        )
+        await self.db.commit()
+        return {
+            "document_id": str(doc.id),
+            "format": "html" if fmt == "pdf" else fmt,
+            "filename": filename,
+            "media_type": media_type,
+            "content": content,
+            "print_hint": "Abra o HTML e use Imprimir → Salvar como PDF." if fmt in {"html", "pdf"} else None,
+        }
+
     async def _owned_patient(self, patient_id: uuid.UUID) -> Patient:
         patient = await self.db.get(Patient, patient_id)
         if (
@@ -233,3 +315,10 @@ def _render(template: str, variables: dict[str, str]) -> str:
     for key, value in variables.items():
         out = out.replace("{{" + key + "}}", str(value))
     return out
+
+
+def _slug(title: str) -> str:
+    cleaned = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "-" for ch in title.strip().lower())
+    while "--" in cleaned:
+        cleaned = cleaned.replace("--", "-")
+    return (cleaned.strip("-") or "documento")[:80]

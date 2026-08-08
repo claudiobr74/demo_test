@@ -147,6 +147,33 @@ class AgendaPage extends ConsumerWidget {
                   ),
                   error: (e, _) => Text(e.toString(), style: const TextStyle(color: SerenaColors.danger)),
                   data: (items) {
+                    if (mode == AgendaViewMode.day) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (items.isEmpty) ...[
+                            Text(
+                              'Nenhum atendimento neste dia — use + ou arraste quando houver.',
+                              style: Theme.of(context).textTheme.bodyMedium,
+                            ),
+                            const SizedBox(height: 12),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: FilledButton(
+                                onPressed: () => _openCreate(context, ref),
+                                child: const Text('Criar atendimento'),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                          ],
+                          _DayTimeline(
+                            day: DateTime(anchor.year, anchor.month, anchor.day),
+                            items: items,
+                            onChanged: () => ref.invalidate(agendaProvider),
+                          ),
+                        ],
+                      );
+                    }
                     if (items.isEmpty) {
                       return Container(
                         width: double.infinity,
@@ -209,6 +236,178 @@ class AgendaPage extends ConsumerWidget {
   }
 }
 
+/// Day grid with hour slots — long-press and drop to reschedule.
+class _DayTimeline extends ConsumerWidget {
+  const _DayTimeline({
+    required this.day,
+    required this.items,
+    required this.onChanged,
+  });
+
+  final DateTime day;
+  final List<Map<String, dynamic>> items;
+  final VoidCallback onChanged;
+
+  static const int _startHour = 7;
+  static const int _endHour = 21;
+  static const double _slotHeight = 64;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final byHour = <int, List<Map<String, dynamic>>>{};
+    for (final item in items) {
+      final starts = DateTime.tryParse(item['starts_at'] as String? ?? '')?.toLocal();
+      if (starts == null) continue;
+      final hour = starts.hour.clamp(_startHour, _endHour - 1);
+      byHour.putIfAbsent(hour, () => []).add(item);
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Arraste um atendimento para outro horário (pressione e segure).',
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: SerenaColors.inkSoft),
+        ),
+        const SizedBox(height: 12),
+        for (var hour = _startHour; hour < _endHour; hour++)
+          _HourSlot(
+            hour: hour,
+            height: _slotHeight,
+            appointments: byHour[hour] ?? const [],
+            onDrop: (item) => _rescheduleToHour(ref, item, hour),
+            onChanged: onChanged,
+          ),
+      ],
+    );
+  }
+
+  Future<void> _rescheduleToHour(
+    WidgetRef ref,
+    Map<String, dynamic> item,
+    int hour,
+  ) async {
+    final starts = DateTime.tryParse(item['starts_at'] as String? ?? '')?.toLocal();
+    if (starts == null) return;
+    final next = DateTime(day.year, day.month, day.day, hour, starts.minute);
+    if (next.isAtSameMomentAs(starts)) return;
+    try {
+      await ref.read(apiClientProvider).post(
+            '/api/v1/appointments/${item['id']}/reschedule',
+            body: {
+              'starts_at': next.toUtc().toIso8601String(),
+              'version': item['version'],
+            },
+          );
+      onChanged();
+    } catch (_) {
+      onChanged();
+    }
+  }
+}
+
+class _HourSlot extends StatelessWidget {
+  const _HourSlot({
+    required this.hour,
+    required this.height,
+    required this.appointments,
+    required this.onDrop,
+    required this.onChanged,
+  });
+
+  final int hour;
+  final double height;
+  final List<Map<String, dynamic>> appointments;
+  final Future<void> Function(Map<String, dynamic> item) onDrop;
+  final VoidCallback onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = '${hour.toString().padLeft(2, '0')}:00';
+    return DragTarget<Map<String, dynamic>>(
+      onWillAcceptWithDetails: (_) => true,
+      onAcceptWithDetails: (details) => onDrop(details.data),
+      builder: (context, candidate, rejected) {
+        final highlighting = candidate.isNotEmpty;
+        return Container(
+          constraints: BoxConstraints(minHeight: height),
+          decoration: BoxDecoration(
+            color: highlighting
+                ? SerenaColors.sage.withValues(alpha: 0.12)
+                : Colors.transparent,
+            border: Border(
+              top: BorderSide(color: SerenaColors.border.withValues(alpha: 0.7)),
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 56,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    label,
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          color: SerenaColors.inkSoft,
+                        ),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: appointments.isEmpty
+                      ? SizedBox(height: height - 8)
+                      : Column(
+                          children: [
+                            for (final item in appointments)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 6),
+                                child: LongPressDraggable<Map<String, dynamic>>(
+                                  data: item,
+                                  feedback: Material(
+                                    elevation: 4,
+                                    borderRadius: BorderRadius.circular(SerenaRadius.md),
+                                    child: SizedBox(
+                                      width: 280,
+                                      child: Opacity(
+                                        opacity: 0.9,
+                                        child: _AppointmentCard(
+                                          item: item,
+                                          onChanged: onChanged,
+                                          compact: true,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  childWhenDragging: Opacity(
+                                    opacity: 0.35,
+                                    child: _AppointmentCard(
+                                      item: item,
+                                      onChanged: onChanged,
+                                      compact: true,
+                                    ),
+                                  ),
+                                  child: _AppointmentCard(
+                                    item: item,
+                                    onChanged: onChanged,
+                                    compact: true,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _MonthAgendaList extends ConsumerWidget {
   const _MonthAgendaList({required this.items, required this.onChanged});
   final List<Map<String, dynamic>> items;
@@ -249,10 +448,15 @@ class _MonthAgendaList extends ConsumerWidget {
 }
 
 class _AppointmentCard extends ConsumerWidget {
-  const _AppointmentCard({required this.item, required this.onChanged});
+  const _AppointmentCard({
+    required this.item,
+    required this.onChanged,
+    this.compact = false,
+  });
 
   final Map<String, dynamic> item;
   final VoidCallback onChanged;
+  final bool compact;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -261,7 +465,7 @@ class _AppointmentCard extends ConsumerWidget {
     final time = starts == null ? '' : DateFormat('HH:mm').format(starts);
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(compact ? 12 : 16),
       decoration: BoxDecoration(
         color: SerenaColors.surface,
         borderRadius: BorderRadius.circular(SerenaRadius.md),
@@ -283,65 +487,100 @@ class _AppointmentCard extends ConsumerWidget {
               _StatusBadge(status: status),
             ],
           ),
-          const SizedBox(height: 6),
-          Text(
-            _modality(item['modality'] as String?) +
-                (item['location'] != null ? ' · ${item['location']}' : '') +
-                (item['recurrence_id'] != null ? ' · Série recorrente' : ''),
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              if (status == 'awaiting_confirmation' || status == 'scheduled')
-                OutlinedButton(
-                  onPressed: () => _status(ref, 'confirmed'),
-                  child: const Text('Confirmar'),
-                ),
-              if (status == 'confirmed' || status == 'scheduled' || status == 'awaiting_confirmation') ...[
-                FilledButton(
-                  onPressed: () => context.push(
-                    '/sessoes/nova?patientId=${item['patient_id']}&appointmentId=${item['id']}',
+          if (!compact) ...[
+            const SizedBox(height: 6),
+            Text(
+              _modality(item['modality'] as String?) +
+                  (item['location'] != null ? ' · ${item['location']}' : '') +
+                  (item['recurrence_id'] != null ? ' · Série recorrente' : ''),
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (status == 'awaiting_confirmation' || status == 'scheduled')
+                  OutlinedButton(
+                    onPressed: () => _status(ref, 'confirmed'),
+                    child: const Text('Confirmar'),
                   ),
-                  child: const Text('Iniciar sessão'),
-                ),
-                OutlinedButton(
-                  onPressed: () => context.push('/pacientes/${item['patient_id']}/preparar'),
-                  child: const Text('Preparar'),
-                ),
-                OutlinedButton(
-                  onPressed: () => _reschedule(context, ref),
-                  child: const Text('Reagendar'),
-                ),
-                OutlinedButton(
-                  onPressed: () => _nudge(ref, const Duration(minutes: -15)),
-                  child: const Text('−15 min'),
-                ),
-                OutlinedButton(
-                  onPressed: () => _nudge(ref, const Duration(minutes: 15)),
-                  child: const Text('+15 min'),
-                ),
-                OutlinedButton(
-                  onPressed: () => _copyConfirmation(context, ref),
-                  child: const Text('Mensagem'),
-                ),
-                OutlinedButton(
-                  onPressed: () => _enqueueConfirmation(context, ref),
-                  child: const Text('Enfileirar'),
-                ),
-                OutlinedButton(
-                  onPressed: () => _status(ref, 'no_show'),
-                  child: const Text('Falta'),
-                ),
-                OutlinedButton(
-                  onPressed: () => _status(ref, 'cancelled', reason: 'Cancelado pela agenda'),
-                  child: const Text('Cancelar'),
-                ),
+                if (status == 'confirmed' || status == 'scheduled' || status == 'awaiting_confirmation') ...[
+                  FilledButton(
+                    onPressed: () => context.push(
+                      '/sessoes/nova?patientId=${item['patient_id']}&appointmentId=${item['id']}',
+                    ),
+                    child: const Text('Iniciar sessão'),
+                  ),
+                  OutlinedButton(
+                    onPressed: () => context.push('/pacientes/${item['patient_id']}/preparar'),
+                    child: const Text('Preparar'),
+                  ),
+                  OutlinedButton(
+                    onPressed: () => _reschedule(context, ref),
+                    child: const Text('Reagendar'),
+                  ),
+                  OutlinedButton(
+                    onPressed: () => _nudge(ref, const Duration(minutes: -15)),
+                    child: const Text('−15 min'),
+                  ),
+                  OutlinedButton(
+                    onPressed: () => _nudge(ref, const Duration(minutes: 15)),
+                    child: const Text('+15 min'),
+                  ),
+                  OutlinedButton(
+                    onPressed: () => _copyConfirmation(context, ref),
+                    child: const Text('Mensagem'),
+                  ),
+                  OutlinedButton(
+                    onPressed: () => _enqueueConfirmation(context, ref),
+                    child: const Text('Enfileirar'),
+                  ),
+                  OutlinedButton(
+                    onPressed: () => _status(ref, 'no_show'),
+                    child: const Text('Falta'),
+                  ),
+                  OutlinedButton(
+                    onPressed: () => _status(ref, 'cancelled', reason: 'Cancelado pela agenda'),
+                    child: const Text('Cancelar'),
+                  ),
+                ],
               ],
-            ],
-          ),
+            ),
+          ] else ...[
+            const SizedBox(height: 4),
+            Text(
+              'Segure para arrastar · toque para ações',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: SerenaColors.inkSoft),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                if (status == 'confirmed' || status == 'scheduled' || status == 'awaiting_confirmation') ...[
+                  TextButton(
+                    onPressed: () => context.push(
+                      '/sessoes/nova?patientId=${item['patient_id']}&appointmentId=${item['id']}',
+                    ),
+                    child: const Text('Sessão'),
+                  ),
+                  TextButton(
+                    onPressed: () => _reschedule(context, ref),
+                    child: const Text('Reagendar'),
+                  ),
+                  TextButton(
+                    onPressed: () => _nudge(ref, const Duration(minutes: -15)),
+                    child: const Text('−15'),
+                  ),
+                  TextButton(
+                    onPressed: () => _nudge(ref, const Duration(minutes: 15)),
+                    child: const Text('+15'),
+                  ),
+                ],
+              ],
+            ),
+          ],
         ],
       ),
     );

@@ -27,6 +27,11 @@ class TodayPage extends ConsumerWidget {
           title: const Text('Meu Dia'),
           actions: [
             IconButton(
+              tooltip: 'Uso de IA',
+              onPressed: () => context.go('/ia'),
+              icon: const Icon(Icons.auto_awesome_outlined),
+            ),
+            IconButton(
               tooltip: 'Financeiro',
               onPressed: () => context.go('/financeiro'),
               icon: const Icon(Icons.payments_outlined),

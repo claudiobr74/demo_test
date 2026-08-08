@@ -6,7 +6,9 @@ import time
 import uuid
 from decimal import Decimal
 
-from sqlalchemy import select
+from datetime import UTC, datetime, timedelta
+
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai_gateway import StructuredSupervisorResult
@@ -130,6 +132,105 @@ class AiObservabilityService:
             "id": str(fb.id),
             "output_id": str(output_id),
             "useful": useful,
+        }
+
+    async def usage_summary(self, *, days: int = 30) -> dict:
+        """Org-level cost/latency panel — no clinical content."""
+        self.auth.require(Permission.AI_SUPERVISION_USE)
+        days = max(1, min(days, 90))
+        since = datetime.now(UTC) - timedelta(days=days)
+        org = self.auth.organization_id
+
+        total = await self.db.scalar(
+            select(func.count()).select_from(AiRequest).where(
+                AiRequest.organization_id == org,
+                AiRequest.created_at >= since,
+            )
+        )
+        avg_latency = await self.db.scalar(
+            select(func.avg(AiRequest.latency_ms)).where(
+                AiRequest.organization_id == org,
+                AiRequest.created_at >= since,
+                AiRequest.latency_ms.is_not(None),
+            )
+        )
+        sum_in = await self.db.scalar(
+            select(func.coalesce(func.sum(AiRequest.input_tokens), 0)).where(
+                AiRequest.organization_id == org,
+                AiRequest.created_at >= since,
+            )
+        )
+        sum_out = await self.db.scalar(
+            select(func.coalesce(func.sum(AiRequest.output_tokens), 0)).where(
+                AiRequest.organization_id == org,
+                AiRequest.created_at >= since,
+            )
+        )
+        sum_cost = await self.db.scalar(
+            select(func.coalesce(func.sum(AiRequest.estimated_cost_usd), 0)).where(
+                AiRequest.organization_id == org,
+                AiRequest.created_at >= since,
+            )
+        )
+        by_provider = (
+            await self.db.execute(
+                select(
+                    AiRequest.provider,
+                    func.count().label("count"),
+                    func.coalesce(func.avg(AiRequest.latency_ms), 0).label("avg_latency"),
+                    func.coalesce(func.sum(AiRequest.estimated_cost_usd), 0).label("cost"),
+                )
+                .where(AiRequest.organization_id == org, AiRequest.created_at >= since)
+                .group_by(AiRequest.provider)
+            )
+        ).all()
+        by_task = (
+            await self.db.execute(
+                select(AiRequest.task, func.count().label("count"))
+                .where(AiRequest.organization_id == org, AiRequest.created_at >= since)
+                .group_by(AiRequest.task)
+                .order_by(func.count().desc())
+            )
+        ).all()
+        useful = await self.db.scalar(
+            select(func.count())
+            .select_from(AiFeedback)
+            .where(
+                AiFeedback.organization_id == org,
+                AiFeedback.useful.is_(True),
+                AiFeedback.created_at >= since,
+            )
+        )
+        not_useful = await self.db.scalar(
+            select(func.count())
+            .select_from(AiFeedback)
+            .where(
+                AiFeedback.organization_id == org,
+                AiFeedback.useful.is_(False),
+                AiFeedback.created_at >= since,
+            )
+        )
+
+        return {
+            "window_days": days,
+            "since": since.isoformat(),
+            "total_requests": total or 0,
+            "avg_latency_ms": int(avg_latency) if avg_latency is not None else None,
+            "input_tokens": int(sum_in or 0),
+            "output_tokens": int(sum_out or 0),
+            "estimated_cost_usd": str(sum_cost or 0),
+            "by_provider": [
+                {
+                    "provider": row.provider,
+                    "count": row.count,
+                    "avg_latency_ms": int(row.avg_latency) if row.avg_latency else 0,
+                    "estimated_cost_usd": str(row.cost),
+                }
+                for row in by_provider
+            ],
+            "by_task": [{"task": row.task, "count": row.count} for row in by_task],
+            "feedback": {"useful": useful or 0, "not_useful": not_useful or 0},
+            "note": "Custos são estimativas de observabilidade, não faturamento.",
         }
 
     def _pair_dto(self, r: AiRequest, o: AiOutput) -> dict:

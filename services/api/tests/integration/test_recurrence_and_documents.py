@@ -100,3 +100,22 @@ async def test_document_from_template(client: AsyncClient):
     listed = await client.get(f"/api/v1/documents?patient_id={pid}", headers=headers)
     assert listed.status_code == 200
     assert len(listed.json()["items"]) == 1
+
+    for fmt in ("txt", "html", "pdf"):
+        exported = await client.get(
+            f"/api/v1/documents/{doc_id}/export",
+            headers=headers,
+            params={"format": fmt},
+        )
+        assert exported.status_code == 200, exported.text
+        payload = exported.json()
+        assert payload["content"]
+        assert payload["filename"]
+        assert "Hugo" in payload["content"] or "html" in payload["media_type"]
+        if fmt == "txt":
+            assert payload["format"] == "txt"
+            assert "text/plain" in payload["media_type"]
+        else:
+            assert payload["format"] == "html"
+            assert "text/html" in payload["media_type"]
+            assert payload.get("print_hint")
