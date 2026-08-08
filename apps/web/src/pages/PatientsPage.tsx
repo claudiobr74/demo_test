@@ -9,6 +9,7 @@ export default function PatientsPage({ onOpenPatient }: Props) {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [code, setCode] = useState("");
+  const [sessionFee, setSessionFee] = useState("180");
 
   const load = async () => {
     try {
@@ -33,7 +34,7 @@ export default function PatientsPage({ onOpenPatient }: Props) {
       </header>
 
       <form
-        className="grid gap-3 rounded-2xl border border-emerald-200 bg-white/70 p-5 md:grid-cols-4"
+        className="grid gap-3 rounded-2xl border border-emerald-200 bg-white/70 p-5 md:grid-cols-5"
         onSubmit={async (e) => {
           e.preventDefault();
           if (!firstName.trim() || !lastName.trim()) return;
@@ -41,6 +42,7 @@ export default function PatientsPage({ onOpenPatient }: Props) {
             first_name: firstName.trim(),
             last_name: lastName.trim(),
             internal_code: code.trim() || undefined,
+            session_fee: sessionFee.trim() || undefined,
           });
           setFirstName("");
           setLastName("");
@@ -65,6 +67,12 @@ export default function PatientsPage({ onOpenPatient }: Props) {
           placeholder="Código (opcional)"
           value={code}
           onChange={(e) => setCode(e.target.value)}
+        />
+        <input
+          className="rounded-xl border px-3 py-2"
+          placeholder="Valor sessão (R$)"
+          value={sessionFee}
+          onChange={(e) => setSessionFee(e.target.value)}
         />
         <button className="rounded-xl bg-emerald-800 px-4 py-2 text-white" type="submit">
           Cadastrar

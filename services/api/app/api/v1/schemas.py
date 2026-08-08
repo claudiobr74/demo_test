@@ -61,6 +61,14 @@ class ExpenseUpdateRequest(APIModel):
     mark_paid: bool | None = None
 
 
+class PackageCreateRequest(APIModel):
+    patient_id: UUID
+    total_sessions: int = Field(ge=1, le=200)
+    price: Decimal
+    valid_until: date | None = None
+    create_charge: bool = True
+
+
 class PatientCreateRequest(APIModel):
     first_name: str = Field(min_length=1, max_length=100)
     last_name: str = Field(min_length=1, max_length=100)

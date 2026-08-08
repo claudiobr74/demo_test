@@ -40,8 +40,12 @@
 - Sessão ativa com autosave, Supervisor e encerramento guiado (feito)
 - Financeiro com cobrança/pagamento; Documentos com modelos/export (feito)
 - Hub do paciente (memória, consentimentos, prontuário) (feito)
-- Recibos / pacotes / PWA install flow do modelo
-- Continuar portando detalhes do `src/legacy/` (ActiveSession áudio, Finance relatórios)
+- Recibos imprimíveis + pacotes de sessões + débito no fechamento (feito)
+- Agenda com recorrência; taxa de sessão no cadastro; tarefas rápidas (feito)
+- Hub: formulação viva + plano terapêutico/metas (feito)
+- Financeiro: abas Hoje/Recebimentos/Despesas/Relatórios + cópia contábil (feito)
+- Continuar portando detalhes do `src/legacy/` (ActiveSession áudio/transcrição)
+- PWA install flow (Sidebar já tem prompt — validar em produção)
 
 ### P2/P3 restante
 - Transcrição opcional → proposta → revisão humana (não vira prontuário sozinha)

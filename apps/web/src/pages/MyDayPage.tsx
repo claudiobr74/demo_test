@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   completeTask,
   createCharge,
+  createTask,
   getToday,
   prepareConfirmationCopy,
   prepareSessionContext,
@@ -20,6 +21,7 @@ export default function MyDayPage({ onOpenSession, onPreparePatient }: Props) {
   const [hint, setHint] = useState<string | null>(null);
   const [prep, setPrep] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
+  const [newTask, setNewTask] = useState("");
 
   const load = async () => {
     setLoading(true);
@@ -267,6 +269,26 @@ export default function MyDayPage({ onOpenSession, onPreparePatient }: Props) {
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-emerald-700">
           Tarefas
         </h2>
+        <form
+          className="mb-3 flex gap-2"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (!newTask.trim()) return;
+            await createTask({ title: newTask.trim(), kind: "admin" });
+            setNewTask("");
+            await load();
+          }}
+        >
+          <input
+            className="w-full rounded-xl border px-3 py-2 text-sm"
+            placeholder="Nova tarefa rápida…"
+            value={newTask}
+            onChange={(e) => setNewTask(e.target.value)}
+          />
+          <button className="rounded-xl bg-emerald-800 px-4 py-2 text-sm text-white" type="submit">
+            Adicionar
+          </button>
+        </form>
         {tasks.length === 0 ? (
           <p className="text-sm text-emerald-800/70">Nenhuma tarefa aberta.</p>
         ) : (

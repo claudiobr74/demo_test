@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   Save,
 } from "lucide-react";
+import ReceiptModal from "../components/ReceiptModal";
 import {
   autosaveSession,
   closeSession,
@@ -13,6 +14,7 @@ import {
   deferSessionClosure,
   getSession,
   prepareSessionContext,
+  registerPayment,
   runSupervisor,
   type SessionRecord,
 } from "../lib/workspace";
@@ -20,6 +22,13 @@ import {
 type Props = { sessionId: string; onClose: () => void };
 type Tab = "notas" | "supervisor" | "encerrar";
 type SaveState = "Salvo" | "Salvando…" | "Erro" | "—";
+
+type PendingCharge = {
+  id: string;
+  amount: string;
+  description?: string | null;
+  patientName: string;
+};
 
 export default function SessionPage({ sessionId, onClose }: Props) {
   const [session, setSession] = useState<SessionRecord | null>(null);
@@ -40,6 +49,14 @@ export default function SessionPage({ sessionId, onClose }: Props) {
   const [schedTime, setSchedTime] = useState("14:00");
   const [closing, setClosing] = useState(false);
   const [hint, setHint] = useState<string | null>(null);
+  const [payMethod, setPayMethod] = useState("pix");
+  const [pendingCharge, setPendingCharge] = useState<PendingCharge | null>(null);
+  const [receipt, setReceipt] = useState<{
+    patientName: string;
+    amount: string;
+    description?: string | null;
+    method: string;
+  } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const versionRef = useRef(1);
 
@@ -83,7 +100,7 @@ export default function SessionPage({ sessionId, onClose }: Props) {
     }, 700);
   };
 
-  if (error) {
+  if (error && !session) {
     return (
       <div className="p-6">
         <p className="text-red-700">{error}</p>
@@ -98,6 +115,19 @@ export default function SessionPage({ sessionId, onClose }: Props) {
 
   return (
     <div className="animate-fade-in min-h-screen bg-gradient-to-b from-emerald-50 to-transparent">
+      {receipt && (
+        <ReceiptModal
+          patientName={receipt.patientName}
+          amount={receipt.amount}
+          description={receipt.description}
+          method={receipt.method}
+          onClose={() => {
+            setReceipt(null);
+            onClose();
+          }}
+        />
+      )}
+
       <header className="sticky top-0 z-10 border-b border-emerald-200/80 bg-[#faf9f6]/95 px-4 py-3 backdrop-blur md:px-8">
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -143,6 +173,8 @@ export default function SessionPage({ sessionId, onClose }: Props) {
       </header>
 
       <main className="mx-auto max-w-5xl space-y-5 px-4 py-6 md:px-8">
+        {error && <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+
         {tab === "notas" && (
           <>
             {prep && (
@@ -311,8 +343,7 @@ export default function SessionPage({ sessionId, onClose }: Props) {
           <section className="space-y-5 rounded-2xl border border-emerald-200 bg-white/70 p-5">
             <h2 className="font-serif text-xl text-emerald-950">Encerramento guiado</h2>
             <p className="text-sm text-emerald-800/80">
-              Finalize o registro clínico, adie se precisar, ou já marque o próximo atendimento —
-              sem Google Calendar.
+              Finalize o registro clínico, cobradiça/pacote e retorno — sem Google Calendar/Docs.
             </p>
 
             <div className="grid gap-3 rounded-xl border border-emerald-100 p-4 md:grid-cols-3">
@@ -355,49 +386,117 @@ export default function SessionPage({ sessionId, onClose }: Props) {
 
             {hint && <p className="rounded-xl bg-emerald-100 px-3 py-2 text-sm">{hint}</p>}
 
-            <div className="flex flex-wrap gap-2">
-              <button
-                className="rounded-xl border px-4 py-2 text-sm"
-                disabled={closing}
-                onClick={async () => {
-                  setClosing(true);
-                  try {
-                    await deferSessionClosure(sessionId);
-                    onClose();
-                  } finally {
-                    setClosing(false);
-                  }
-                }}
-              >
-                Adiar fechamento
-              </button>
-              <button
-                className="inline-flex items-center gap-2 rounded-xl bg-emerald-800 px-4 py-2 text-sm text-white disabled:opacity-50"
-                disabled={closing}
-                onClick={async () => {
-                  setClosing(true);
-                  try {
-                    await autosaveSession(sessionId, {
-                      focus,
-                      observations,
-                      interventions,
-                      agreements,
-                      planning,
-                      hypotheses,
-                      version: versionRef.current,
-                    });
-                    await closeSession(sessionId, true);
-                    onClose();
-                  } catch (e) {
-                    setError(e instanceof Error ? e.message : "Falha ao encerrar");
-                  } finally {
-                    setClosing(false);
-                  }
-                }}
-              >
-                <CheckCircle2 size={16} /> Encerrar e registrar
-              </button>
-            </div>
+            {pendingCharge ? (
+              <div className="space-y-3 rounded-xl border border-amber-200 bg-amber-50/60 p-4">
+                <h3 className="font-semibold text-amber-950">Cobrança da sessão</h3>
+                <p className="text-sm">
+                  {pendingCharge.description || "Sessão"} · R$ {pendingCharge.amount}
+                </p>
+                <label className="block text-sm">
+                  Forma de pagamento
+                  <select
+                    className="mt-1 w-full rounded-xl border px-3 py-2"
+                    value={payMethod}
+                    onChange={(e) => setPayMethod(e.target.value)}
+                  >
+                    <option value="pix">Pix</option>
+                    <option value="cash">Dinheiro</option>
+                    <option value="card">Cartão</option>
+                    <option value="transfer">Transferência</option>
+                  </select>
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    className="rounded-xl bg-emerald-800 px-4 py-2 text-sm text-white"
+                    onClick={async () => {
+                      await registerPayment({
+                        charge_id: pendingCharge.id,
+                        amount: pendingCharge.amount,
+                        method: payMethod,
+                      });
+                      setReceipt({
+                        patientName: pendingCharge.patientName,
+                        amount: pendingCharge.amount,
+                        description: pendingCharge.description,
+                        method: payMethod,
+                      });
+                      setPendingCharge(null);
+                    }}
+                  >
+                    Registrar pagamento e emitir recibo
+                  </button>
+                  <button
+                    className="rounded-xl border px-4 py-2 text-sm"
+                    onClick={onClose}
+                  >
+                    Deixar pendente e sair
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                <button
+                  className="rounded-xl border px-4 py-2 text-sm"
+                  disabled={closing}
+                  onClick={async () => {
+                    setClosing(true);
+                    try {
+                      await deferSessionClosure(sessionId);
+                      onClose();
+                    } finally {
+                      setClosing(false);
+                    }
+                  }}
+                >
+                  Adiar fechamento
+                </button>
+                <button
+                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-800 px-4 py-2 text-sm text-white disabled:opacity-50"
+                  disabled={closing}
+                  onClick={async () => {
+                    setClosing(true);
+                    setError(null);
+                    try {
+                      await autosaveSession(sessionId, {
+                        focus,
+                        observations,
+                        interventions,
+                        agreements,
+                        planning,
+                        hypotheses,
+                        version: versionRef.current,
+                      });
+                      const result = await closeSession(sessionId, true);
+                      if (result.package) {
+                        setHint(
+                          `Sessão debitada do pacote (${result.package.used_sessions}/${result.package.total_sessions}; restam ${result.package.remaining_sessions}).`,
+                        );
+                        setTimeout(() => onClose(), 1200);
+                      } else if (result.charge && result.charge.status !== "paid") {
+                        setPendingCharge({
+                          id: result.charge.id,
+                          amount: result.charge.amount,
+                          description: result.charge.description,
+                          patientName:
+                            result.charge.patient_display_name ||
+                            session.patient_display_name ||
+                            "Paciente",
+                        });
+                        setHint("Registro clínico finalizado. Confirme o recebimento.");
+                      } else {
+                        onClose();
+                      }
+                    } catch (e) {
+                      setError(e instanceof Error ? e.message : "Falha ao encerrar");
+                    } finally {
+                      setClosing(false);
+                    }
+                  }}
+                >
+                  <CheckCircle2 size={16} /> Encerrar e registrar
+                </button>
+              </div>
+            )}
           </section>
         )}
       </main>

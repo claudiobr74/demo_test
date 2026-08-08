@@ -159,23 +159,33 @@ class SessionService:
             record_dto = {"id": str(record.id), "status": record.status}
 
         charge_dto = None
+        package_dto = None
         if patient and self.auth.has(Permission.FINANCE_WRITE):
             from app.application.finance_service import FinanceService
+            from app.application.package_service import PackageService
 
-            finance = FinanceService(self.db, self.auth)
-            charge = await finance.ensure_session_charge(
+            packages = PackageService(self.db, self.auth)
+            package_dto = await packages.use_for_session(
                 patient_id=session.patient_id,
                 session_id=session.id,
-                amount=patient.session_fee,
-                description=f"Sessão · {patient.display_name}",
             )
-            if charge is not None:
-                await self.db.flush()
-                charge_dto = {
-                    "id": str(charge.id),
-                    "amount": str(charge.amount),
-                    "status": charge.status,
-                }
+            if package_dto is None:
+                finance = FinanceService(self.db, self.auth)
+                charge = await finance.ensure_session_charge(
+                    patient_id=session.patient_id,
+                    session_id=session.id,
+                    amount=patient.session_fee,
+                    description=f"Sessão · {patient.display_name}",
+                )
+                if charge is not None:
+                    await self.db.flush()
+                    charge_dto = {
+                        "id": str(charge.id),
+                        "amount": str(charge.amount),
+                        "status": charge.status,
+                        "description": charge.description,
+                        "patient_display_name": patient.display_name,
+                    }
 
         await write_audit(
             self.db,
@@ -191,6 +201,7 @@ class SessionService:
             **self._to_dto(session, patient),
             "clinical_record": record_dto,
             "charge": charge_dto,
+            "package": package_dto,
         }
 
     async def mark_pending_closure(self, session_id: uuid.UUID) -> dict:

@@ -8,9 +8,11 @@ from app.api.v1.schemas import (
     ChargeCreateRequest,
     ExpenseCreateRequest,
     ExpenseUpdateRequest,
+    PackageCreateRequest,
     PaymentCreateRequest,
 )
 from app.application.finance_service import FinanceService
+from app.application.package_service import PackageService
 from app.infrastructure.db.session import get_db
 
 router = APIRouter()
@@ -86,3 +88,35 @@ async def update_expense(
     return await FinanceService(db, auth).update_expense(
         expense_id, body.model_dump(exclude_unset=True)
     )
+
+
+@router.get("/packages")
+async def list_packages(
+    patient_id: UUID | None = None,
+    status: str | None = None,
+    limit: int = Query(50, ge=1, le=100),
+    auth: AuthContext = Depends(get_current_auth),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    items = await PackageService(db, auth).list_packages(
+        patient_id=patient_id, status=status, limit=limit
+    )
+    return {"items": items}
+
+
+@router.post("/packages", status_code=201)
+async def create_package(
+    body: PackageCreateRequest,
+    auth: AuthContext = Depends(get_current_auth),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    return await PackageService(db, auth).create_package(body.model_dump(exclude_unset=True))
+
+
+@router.post("/packages/{package_id}/cancel")
+async def cancel_package(
+    package_id: UUID,
+    auth: AuthContext = Depends(get_current_auth),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    return await PackageService(db, auth).cancel_package(package_id)

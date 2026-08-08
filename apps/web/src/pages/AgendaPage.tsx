@@ -16,6 +16,8 @@ export default function AgendaPage() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [patientId, setPatientId] = useState("");
   const [time, setTime] = useState("09:00");
+  const [recurrence, setRecurrence] = useState<"none" | "weekly" | "biweekly">("none");
+  const [recurrenceCount, setRecurrenceCount] = useState(8);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -87,12 +89,23 @@ export default function AgendaPage() {
           if (!patientId) return;
           const [hh, mm] = time.split(":").map(Number);
           const starts = new Date(day.getFullYear(), day.getMonth(), day.getDate(), hh, mm);
-          await createAppointment({
+          const created = await createAppointment({
             patient_id: patientId,
             starts_at: starts.toISOString(),
             duration_minutes: 50,
             modality: "in_person",
+            recurrence_frequency: recurrence === "none" ? undefined : recurrence,
+            recurrence_count: recurrence === "none" ? undefined : recurrenceCount,
           });
+          setMsg(
+            recurrence === "none"
+              ? "Atendimento agendado."
+              : `Série ${recurrence} criada (${recurrenceCount} ocorrências)${
+                  (created as Appointment & { recurrence_id?: string }).recurrence_id
+                    ? "."
+                    : "."
+                }`,
+          );
           await load();
         }}
       >
@@ -119,6 +132,31 @@ export default function AgendaPage() {
             onChange={(e) => setTime(e.target.value)}
           />
         </label>
+        <label className="text-sm">
+          Recorrência
+          <select
+            className="mt-1 block rounded-xl border px-3 py-2"
+            value={recurrence}
+            onChange={(e) => setRecurrence(e.target.value as "none" | "weekly" | "biweekly")}
+          >
+            <option value="none">Única</option>
+            <option value="weekly">Semanal</option>
+            <option value="biweekly">Quinzenal</option>
+          </select>
+        </label>
+        {recurrence !== "none" && (
+          <label className="text-sm">
+            Qtd.
+            <input
+              type="number"
+              min={2}
+              max={52}
+              className="mt-1 block w-20 rounded-xl border px-3 py-2"
+              value={recurrenceCount}
+              onChange={(e) => setRecurrenceCount(Number(e.target.value) || 8)}
+            />
+          </label>
+        )}
         <button className="rounded-xl bg-emerald-800 px-4 py-2 text-white" type="submit">
           Agendar
         </button>

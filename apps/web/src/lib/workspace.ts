@@ -20,6 +20,7 @@ export interface Patient {
   email?: string | null;
   phone?: string | null;
   status?: string;
+  session_fee?: string | number | null;
 }
 
 export interface Appointment {
@@ -112,6 +113,7 @@ export async function createPatient(payload: {
   internal_code?: string;
   email?: string;
   phone?: string;
+  session_fee?: number | string;
 }): Promise<Patient> {
   return apiJson<Patient>("/api/v1/patients", {
     method: "POST",
@@ -135,6 +137,8 @@ export async function createAppointment(payload: {
   starts_at: string;
   duration_minutes?: number;
   modality?: string;
+  recurrence_frequency?: "none" | "weekly" | "biweekly";
+  recurrence_count?: number;
 }): Promise<Appointment> {
   return apiJson<Appointment>("/api/v1/appointments", {
     method: "POST",
@@ -185,7 +189,23 @@ export async function autosaveSession(
 }
 
 export async function closeSession(sessionId: string, finalizeRecord = true) {
-  return apiJson<Record<string, unknown>>(`/api/v1/sessions/${sessionId}/close`, {
+  return apiJson<{
+    id?: string;
+    charge?: {
+      id: string;
+      amount: string;
+      status: string;
+      description?: string | null;
+      patient_display_name?: string | null;
+    } | null;
+    package?: {
+      id: string;
+      remaining_sessions?: number;
+      total_sessions?: number;
+      used_sessions?: number;
+    } | null;
+    clinical_record?: { id: string; status: string } | null;
+  }>(`/api/v1/sessions/${sessionId}/close`, {
     method: "POST",
     body: JSON.stringify({ finalize_record: finalizeRecord }),
   });
@@ -313,6 +333,113 @@ export async function getTasks(): Promise<TaskItem[]> {
 
 export async function completeTask(id: string): Promise<TaskItem> {
   return apiJson<TaskItem>(`/api/v1/tasks/${id}/complete`, { method: "POST" });
+}
+
+export async function createTask(payload: {
+  title: string;
+  kind?: string;
+  patient_id?: string;
+  priority?: number;
+}): Promise<TaskItem> {
+  return apiJson<TaskItem>("/api/v1/tasks", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export interface PackageItem {
+  id: string;
+  patient_id: string;
+  patient_display_name?: string | null;
+  total_sessions: number;
+  used_sessions: number;
+  remaining_sessions: number;
+  price: string | number;
+  valid_until?: string | null;
+  status: string;
+  charge?: { id: string; amount: string; status: string } | null;
+}
+
+export async function getPackages(patientId?: string): Promise<PackageItem[]> {
+  const q = patientId ? `?patient_id=${encodeURIComponent(patientId)}` : "";
+  const data = await apiJson<{ items: PackageItem[] }>(`/api/v1/finance/packages${q}`);
+  return data.items || [];
+}
+
+export async function createPackage(payload: {
+  patient_id: string;
+  total_sessions: number;
+  price: number | string;
+  valid_until?: string;
+  create_charge?: boolean;
+}): Promise<PackageItem> {
+  return apiJson<PackageItem>("/api/v1/finance/packages", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function cancelPackage(id: string): Promise<PackageItem> {
+  return apiJson<PackageItem>(`/api/v1/finance/packages/${id}/cancel`, { method: "POST" });
+}
+
+export async function getCurrentFormulation(patientId: string) {
+  const data = await apiJson<{ formulation: Record<string, unknown> | null }>(
+    `/api/v1/formulations/patients/${patientId}/current`,
+  );
+  return data.formulation;
+}
+
+export async function upsertFormulationDraft(
+  patientId: string,
+  payload: { framework?: string; body?: Record<string, unknown>; version?: number },
+) {
+  return apiJson(`/api/v1/formulations/patients/${patientId}/draft`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function promoteFormulation(formulationId: string) {
+  return apiJson(`/api/v1/formulations/${formulationId}/promote`, { method: "POST" });
+}
+
+export async function getCurrentTreatmentPlan(patientId: string) {
+  const data = await apiJson<{ plan: Record<string, unknown> | null }>(
+    `/api/v1/treatment-plans/patients/${patientId}/current`,
+  );
+  return data.plan;
+}
+
+export async function upsertTreatmentPlan(
+  patientId: string,
+  payload: {
+    priority_problems?: string[];
+    initial_formulation_summary?: string;
+    status?: string;
+  },
+) {
+  return apiJson(`/api/v1/treatment-plans/patients/${patientId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function addTreatmentGoal(patientId: string, title: string) {
+  return apiJson(`/api/v1/treatment-plans/patients/${patientId}/goals`, {
+    method: "POST",
+    body: JSON.stringify({ title }),
+  });
+}
+
+export async function updateTreatmentGoal(
+  goalId: string,
+  payload: { status?: string; title?: string },
+) {
+  return apiJson(`/api/v1/treatment-plans/goals/${goalId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function getDocuments(): Promise<DocItem[]> {
