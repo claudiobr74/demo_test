@@ -81,6 +81,11 @@ class PatientHubPage extends ConsumerWidget {
                     label: const Text('Preparar sessão'),
                   ),
                   OutlinedButton.icon(
+                    onPressed: () => context.push('/pacientes/$patientId/formulacao'),
+                    icon: const Icon(Icons.account_tree_outlined),
+                    label: const Text('Formulação viva'),
+                  ),
+                  OutlinedButton.icon(
                     onPressed: () => context.push('/sessoes/nova?patientId=$patientId'),
                     icon: const Icon(Icons.play_arrow_outlined),
                     label: const Text('Nova sessão'),

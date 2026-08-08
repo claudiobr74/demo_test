@@ -7,6 +7,7 @@ import '../../features/auth/login_page.dart';
 import '../../features/documents/documents_page.dart';
 import '../../features/finance/finance_page.dart';
 import '../../features/patients/clinical_records_page.dart';
+import '../../features/patients/formulation_page.dart';
 import '../../features/patients/patient_hub_page.dart';
 import '../../features/patients/patients_page.dart';
 import '../../features/sessions/prepare_session_page.dart';
@@ -63,6 +64,12 @@ final routerProvider = Provider<GoRouter>((ref) {
                   GoRoute(
                     path: 'preparar',
                     builder: (context, state) => PrepareSessionPage(
+                      patientId: state.pathParameters['id']!,
+                    ),
+                  ),
+                  GoRoute(
+                    path: 'formulacao',
+                    builder: (context, state) => FormulationPage(
                       patientId: state.pathParameters['id']!,
                     ),
                   ),

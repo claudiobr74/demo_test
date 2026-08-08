@@ -184,3 +184,15 @@ class CaseMemoryCreateRequest(APIModel):
 
 class CaseMemoryStatusRequest(APIModel):
     status: str
+
+
+class CaseMemoryProvenanceRequest(APIModel):
+    resource_type: str
+    resource_id: str | None = None
+    note: str | None = None
+
+
+class FormulationUpsertRequest(APIModel):
+    framework: str | None = None
+    body: dict[str, Any] | None = None
+    version: int | None = None

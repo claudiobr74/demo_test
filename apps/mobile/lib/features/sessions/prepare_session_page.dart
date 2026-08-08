@@ -29,6 +29,7 @@ class PrepareSessionPage extends ConsumerWidget {
           final patient = data['patient'] as Map? ?? {};
           final last = data['last_session_summary'] as Map?;
           final memory = data['case_memory'] as Map? ?? {};
+          final formulation = data['formulation'] as Map?;
           final tasks = data['active_tasks'] as List? ?? [];
           final focus = data['suggested_focus'] as String?;
 
@@ -51,6 +52,30 @@ class PrepareSessionPage extends ConsumerWidget {
                   focus?.isNotEmpty == true ? focus! : 'Sem foco sugerido ainda — use o Supervisor se quiser.',
                 ),
               ),
+              if (formulation != null) ...[
+                const SizedBox(height: 16),
+                SerenaSection(
+                  title: 'Formulação viva',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        formulation['is_official'] == true ? 'Oficial' : 'Rascunho',
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                              color: SerenaColors.sageDark,
+                            ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(formulation['therapeutic_focus'] as String? ?? 'Sem foco registrado.'),
+                      const SizedBox(height: 8),
+                      TextButton(
+                        onPressed: () => context.push('/pacientes/$patientId/formulacao'),
+                        child: const Text('Abrir formulação'),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: 16),
               SerenaSection(
                 title: 'Última sessão',

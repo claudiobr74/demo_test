@@ -8,6 +8,7 @@ from app.api.v1 import (
     consents,
     documents,
     finance,
+    formulations,
     patients,
     sessions,
     supervisor,
@@ -26,3 +27,4 @@ api_router.include_router(clinical_records.router, prefix="/clinical-records", t
 api_router.include_router(finance.router, prefix="/finance", tags=["finance"])
 api_router.include_router(case_memory.router, prefix="/case-memory", tags=["case-memory"])
 api_router.include_router(documents.router, prefix="/documents", tags=["documents"])
+api_router.include_router(formulations.router, prefix="/formulations", tags=["formulations"])

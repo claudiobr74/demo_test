@@ -70,6 +70,23 @@ class ApiClient {
     }
   }
 
+  Future<Map<String, dynamic>> put(String path, {Map<String, dynamic>? body}) async {
+    try {
+      final response = await http.put(
+        _uri(path),
+        headers: _headers(),
+        body: body == null ? null : jsonEncode(body),
+      );
+      return _decode(response);
+    } catch (e) {
+      if (e is ApiException) rethrow;
+      throw ApiException(
+        code: 'NETWORK_ERROR',
+        message: 'Não foi possível conectar à API.',
+      );
+    }
+  }
+
   Uri _uri(String path) {
     if (baseUrl.isEmpty) {
       return Uri.parse(path);

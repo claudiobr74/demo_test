@@ -16,16 +16,20 @@
 - Reagendar na agenda + mensagem de confirmação (copiar)
 - Recorrência semanal/quinzenal de atendimentos
 - Documentos: modelos, rascunho, finalizar, copiar texto
+- Formulação viva (rascunho → oficial) + uso no Preparar sessão
+- Proveniência tipada na memória do caso
+- Provider OpenAI plugável (fallback offline se indisponível)
+- Ajuste rápido de horário na agenda (−15 / +15 min)
 
 ## Próximo
 
 ### P1 restante
-- Agenda drag-and-drop / edição visual de horário
+- Drag-and-drop visual completo na agenda
 
 ### P2
-- Providers LLM reais
-- Living formulation
-- Proveniência enriquecida na memória
+- Gemini provider + roteamento multi-modelo
+- Plano terapêutico / metas
+- Proveniência com deep-links na UI
 
 ### P3
 - Confirmações multi-canal (envio real)

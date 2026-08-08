@@ -316,6 +316,14 @@ class _AppointmentCard extends ConsumerWidget {
                   child: const Text('Reagendar'),
                 ),
                 OutlinedButton(
+                  onPressed: () => _nudge(ref, const Duration(minutes: -15)),
+                  child: const Text('−15 min'),
+                ),
+                OutlinedButton(
+                  onPressed: () => _nudge(ref, const Duration(minutes: 15)),
+                  child: const Text('+15 min'),
+                ),
+                OutlinedButton(
                   onPressed: () => _copyConfirmation(context, ref),
                   child: const Text('Mensagem'),
                 ),
@@ -359,6 +367,20 @@ class _AppointmentCard extends ConsumerWidget {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
     }
+  }
+
+  Future<void> _nudge(WidgetRef ref, Duration delta) async {
+    final starts = DateTime.tryParse(item['starts_at'] as String? ?? '');
+    if (starts == null) return;
+    final next = starts.add(delta);
+    await ref.read(apiClientProvider).post(
+      '/api/v1/appointments/${item['id']}/reschedule',
+      body: {
+        'starts_at': next.toUtc().toIso8601String(),
+        'version': item['version'],
+      },
+    );
+    onChanged();
   }
 
   Future<void> _reschedule(BuildContext context, WidgetRef ref) async {

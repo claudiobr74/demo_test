@@ -24,6 +24,15 @@ VALID_EPISTEMOLOGY = {
     "insufficient_information",
 }
 VALID_STATUS = {"active", "strengthened", "weakened", "retired"}
+VALID_PROVENANCE_TYPES = {
+    "session",
+    "clinical_record",
+    "case_memory",
+    "formulation",
+    "appointment",
+    "professional_note",
+    "external_report",
+}
 
 
 class CaseMemoryService:
@@ -60,6 +69,7 @@ class CaseMemoryService:
         content = (data.get("content") or "").strip()
         if not content:
             raise ValidationAppError("Conteúdo obrigatório.")
+        provenance = _normalize_provenance(data.get("provenance") or [])
 
         entry = CaseMemoryEntry(
             organization_id=self.auth.organization_id,
@@ -68,7 +78,7 @@ class CaseMemoryService:
             epistemology=epistemology,
             content=content,
             status="active",
-            provenance=data.get("provenance") or [],
+            provenance=provenance,
             framework=data.get("framework"),
             created_by_user_id=self.auth.user_id,
             source=data.get("source") or "professional",
@@ -123,6 +133,28 @@ class CaseMemoryService:
         await self.db.commit()
         return self._dto(entry)
 
+    async def add_provenance(self, entry_id: uuid.UUID, item: dict) -> dict:
+        self.auth.require(Permission.CLINICAL_RECORD_WRITE)
+        entry = await self._owned_entry(entry_id)
+        normalized = _normalize_provenance([item])
+        if not normalized:
+            raise ValidationAppError("Proveniência inválida.")
+        current = list(entry.provenance or [])
+        current.extend(normalized)
+        entry.provenance = current
+        await write_audit(
+            self.db,
+            organization_id=self.auth.organization_id,
+            actor_user_id=self.auth.user_id,
+            action="case_memory.provenance_added",
+            resource_type="case_memory_entry",
+            resource_id=str(entry.id),
+            request_id=self.auth.request_id,
+            metadata={"resource_type": normalized[0]["resource_type"]},
+        )
+        await self.db.commit()
+        return self._dto(entry)
+
     async def context_bundle(self, patient_id: uuid.UUID) -> dict:
         """Compact memory for prepare_session / supervisor."""
         self.auth.require(Permission.CLINICAL_RECORD_READ)
@@ -164,3 +196,24 @@ class CaseMemoryService:
             "created_at": e.created_at.isoformat() if e.created_at else None,
             "pending_review": e.source == "ai_suggestion" and e.accepted_at is None,
         }
+
+
+def _normalize_provenance(items: list) -> list[dict]:
+    out: list[dict] = []
+    for raw in items:
+        if not isinstance(raw, dict):
+            continue
+        resource_type = (raw.get("resource_type") or "").strip()
+        if resource_type not in VALID_PROVENANCE_TYPES:
+            raise ValidationAppError(
+                f"Tipo de proveniência inválido: {resource_type or '(vazio)'}."
+            )
+        out.append(
+            {
+                "resource_type": resource_type,
+                "resource_id": str(raw["resource_id"]) if raw.get("resource_id") else None,
+                "note": (raw.get("note") or "").strip() or None,
+                "recorded_at": raw.get("recorded_at") or datetime.now(UTC).isoformat(),
+            }
+        )
+    return out

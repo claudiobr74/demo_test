@@ -7,6 +7,7 @@ Architecture:
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Protocol
@@ -313,8 +314,7 @@ class SerenaAIGateway:
         raw_context: dict[str, Any],
         user_message: str | None = None,
     ) -> StructuredSupervisorResult:
-        if not settings.ai_enabled:
-            # Product must remain usable without LLM availability.
+        if not settings.ai_enabled or not settings.openai_api_key:
             return self._offline_assist(mode, framework_id, raw_context, user_message)
 
         model_class = MODE_MODEL_CLASS[mode]
@@ -323,14 +323,66 @@ class SerenaAIGateway:
         context = self.context_builder.build(mode, minimized)
         framework = self.frameworks.get(framework_id)
 
-        # Provider call is intentionally stubbed until keys/config exist.
-        # Real providers plug in via LLMProvider protocol without feature coupling.
-        _ = (spec, context, framework, user_message)
-        raise AppError(
-            "AI_PROVIDER_NOT_CONFIGURED",
-            "O Supervisor está temporariamente indisponível.",
-            status_code=503,
-        )
+        try:
+            from app.ai_gateway.providers import OpenAIProvider
+
+            if spec.provider != "openai":
+                raise AppError(
+                    "AI_PROVIDER_NOT_CONFIGURED",
+                    f"Provedor {spec.provider} ainda não está plugado.",
+                    status_code=503,
+                )
+            provider = OpenAIProvider()
+            system = (
+                "Você é o Supervisor Clínico SerenaPsi. Responda APENAS JSON válido com chaves: "
+                "summary (objeto com message), hypotheses (lista de {text, epistemology}), "
+                "observations (lista de {text}), suggested_focus (lista de strings), "
+                "questions (lista de strings), missing_information (lista de strings). "
+                "Nunca diga verdades absolutas. Hipóteses são working_hypothesis. "
+                f"Framework: {framework['name']}."
+            )
+            user = json.dumps(
+                {"mode": mode.value, "context": context, "message": user_message},
+                ensure_ascii=False,
+            )
+            completion = await provider.complete(
+                system=system, user=user, model=spec.model, temperature=0.2
+            )
+            content = completion["content"]
+            result = StructuredSupervisorResult(
+                summary=content.get("summary") or {"message": "Sugestão gerada pelo Supervisor."},
+                hypotheses=content.get("hypotheses") or [],
+                observations=content.get("observations") or [],
+                suggested_focus=content.get("suggested_focus") or [],
+                questions=content.get("questions") or [],
+                missing_information=content.get("missing_information") or [],
+                metadata={
+                    "engine_version": ENGINE_VERSION,
+                    "framework_version": framework["version"],
+                    "framework": framework["id"],
+                    "prompt_policy_version": "openai-1",
+                    "provider": "openai",
+                    "model": spec.model,
+                    "model_class": model_class.value,
+                    "input_tokens": completion.get("input_tokens", 0),
+                    "output_tokens": completion.get("output_tokens", 0),
+                },
+            )
+            text_blob = " ".join(
+                [
+                    user_message or "",
+                    str(result.summary),
+                    " ".join(result.suggested_focus),
+                ]
+            )
+            result.alerts = self.safety.scan(text_blob)
+            return self.critic.review(result, framework["id"])
+        except AppError as exc:
+            logger.warning("ai_provider_fallback", code=exc.code, message=str(exc))
+            offline = self._offline_assist(mode, framework_id, raw_context, user_message)
+            offline.metadata["fallback_from"] = spec.provider
+            offline.metadata["fallback_reason"] = exc.code
+            return offline
 
     def _offline_assist(
         self,
@@ -340,14 +392,29 @@ class SerenaAIGateway:
         user_message: str | None,
     ) -> StructuredSupervisorResult:
         framework = self.frameworks.get(framework_id)
+        memory = raw_context.get("case_memory") or {}
+        formulation = raw_context.get("formulation") or {}
+        facts = _as_text_items(raw_context.get("facts") or memory.get("facts") or [])
+        observations = _as_text_items(
+            raw_context.get("observations") or memory.get("observations") or []
+        )
+        hypotheses = _as_text_items(
+            raw_context.get("hypotheses") or memory.get("hypotheses") or []
+        )
         text_blob = " ".join(
             [
                 user_message or "",
                 str(raw_context.get("last_session_summary") or ""),
                 str(raw_context.get("suggested_focus") or ""),
+                str(formulation.get("therapeutic_focus") or ""),
             ]
         )
         alerts = self.safety.scan(text_blob)
+        focus = (
+            formulation.get("therapeutic_focus")
+            or raw_context.get("suggested_focus")
+            or "Revisar foco da última sessão e combinados em aberto"
+        )
         result = StructuredSupervisorResult(
             summary={
                 "mode": mode.value,
@@ -358,36 +425,27 @@ class SerenaAIGateway:
                 ),
             },
             facts=[
-                {
-                    "text": f,
-                    "epistemology": Epistemology.DOCUMENTED_FACT.value,
-                }
-                for f in (raw_context.get("facts") or [])[:5]
+                {"text": f, "epistemology": Epistemology.DOCUMENTED_FACT.value}
+                for f in facts[:5]
             ],
             observations=[
-                {
-                    "text": o,
-                    "epistemology": Epistemology.CLINICAL_OBSERVATION.value,
-                }
-                for o in (raw_context.get("observations") or [])[:5]
+                {"text": o, "epistemology": Epistemology.CLINICAL_OBSERVATION.value}
+                for o in observations[:5]
             ],
             hypotheses=[
                 {
-                    "text": h if isinstance(h, str) else h.get("statement", ""),
+                    "text": h,
                     "epistemology": Epistemology.WORKING_HYPOTHESIS.value,
                     "evidence_ids": [],
                     "alternatives_considered": False,
                 }
-                for h in (raw_context.get("hypotheses") or [])[:5]
+                for h in hypotheses[:5]
             ],
             missing_information=[
                 "Confirme objetivos ativos com a paciente",
                 "Verifique tarefas terapêuticas pendentes",
             ],
-            suggested_focus=[
-                raw_context.get("suggested_focus")
-                or "Revisar foco da última sessão e combinados em aberto"
-            ],
+            suggested_focus=[focus] if isinstance(focus, str) else list(focus)[:3],
             questions=[
                 "O que mudou desde o último encontro?",
                 "Quais evidências sustentam a hipótese atual — e quais a enfraquecem?",
@@ -404,6 +462,18 @@ class SerenaAIGateway:
             },
         )
         return self.critic.review(result, framework["id"])
+
+
+def _as_text_items(items: list[Any]) -> list[str]:
+    out: list[str] = []
+    for item in items:
+        if isinstance(item, str):
+            out.append(item)
+        elif isinstance(item, dict):
+            text = item.get("text") or item.get("content") or item.get("statement")
+            if text:
+                out.append(str(text))
+    return out
 
 
 gateway = SerenaAIGateway()

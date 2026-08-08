@@ -254,6 +254,22 @@ class SessionService:
         except Exception:
             memory = {"facts": [], "observations": [], "hypotheses": []}
 
+        formulation = None
+        try:
+            from app.application.formulation_service import FormulationService
+
+            formulation = await FormulationService(self.db, self.auth).compact_for_context(
+                patient_id
+            )
+        except Exception:
+            formulation = None
+
+        suggested = None
+        if formulation and formulation.get("therapeutic_focus"):
+            suggested = formulation["therapeutic_focus"]
+        elif last:
+            suggested = last.planning
+
         return {
             "patient": {
                 "id": str(patient.id),
@@ -279,8 +295,9 @@ class SessionService:
                 for r in last_records
             ],
             "case_memory": memory,
+            "formulation": formulation,
             "active_tasks": [{"id": str(t.id), "title": t.title} for t in open_tasks],
-            "suggested_focus": last.planning if last else None,
+            "suggested_focus": suggested,
             "supervisor_action": "Abrir Supervisor IA — Preparar próxima sessão",
         }
 

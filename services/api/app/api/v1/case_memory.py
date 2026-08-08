@@ -4,7 +4,11 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import AuthContext, get_current_auth
-from app.api.v1.schemas import CaseMemoryCreateRequest, CaseMemoryStatusRequest
+from app.api.v1.schemas import (
+    CaseMemoryCreateRequest,
+    CaseMemoryProvenanceRequest,
+    CaseMemoryStatusRequest,
+)
 from app.application.case_memory_service import CaseMemoryService
 from app.infrastructure.db.session import get_db
 
@@ -51,3 +55,15 @@ async def memory_status(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     return await CaseMemoryService(db, auth).update_status(entry_id, body.status)
+
+
+@router.post("/{entry_id}/provenance")
+async def add_provenance(
+    entry_id: UUID,
+    body: CaseMemoryProvenanceRequest,
+    auth: AuthContext = Depends(get_current_auth),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    return await CaseMemoryService(db, auth).add_provenance(
+        entry_id, body.model_dump(exclude_unset=True)
+    )
