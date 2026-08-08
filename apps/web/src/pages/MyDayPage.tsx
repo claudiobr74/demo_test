@@ -13,9 +13,14 @@ import {
 type Props = {
   onOpenSession: (sessionId: string) => void;
   onPreparePatient?: (patientId: string) => void;
+  clinicalAccess?: boolean;
 };
 
-export default function MyDayPage({ onOpenSession, onPreparePatient }: Props) {
+export default function MyDayPage({
+  onOpenSession,
+  onPreparePatient,
+  clinicalAccess = true,
+}: Props) {
   const [data, setData] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [hint, setHint] = useState<string | null>(null);
@@ -84,35 +89,43 @@ export default function MyDayPage({ onOpenSession, onPreparePatient }: Props) {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <button
-                className="rounded-xl border px-3 py-2 text-sm"
-                onClick={async () => {
-                  const ctx = await prepareSessionContext(String(next.patient_id));
-                  setPrep(ctx);
-                  setHint(
-                    `Preparação: ${String(
-                      (ctx.suggested_focus as string) ||
-                        (ctx.last_session_summary as { focus?: string } | undefined)?.focus ||
-                        "contexto carregado",
-                    )}`,
-                  );
-                  onPreparePatient?.(String(next.patient_id));
-                }}
-              >
-                Preparar
-              </button>
-              <button
-                className="rounded-xl bg-emerald-800 px-4 py-2 text-sm text-white"
-                onClick={async () => {
-                  const session = await startSession(
-                    String(next.patient_id),
-                    String(next.id),
-                  );
-                  onOpenSession(session.id);
-                }}
-              >
-                Iniciar sessão
-              </button>
+              {clinicalAccess ? (
+                <>
+                  <button
+                    className="rounded-xl border px-3 py-2 text-sm"
+                    onClick={async () => {
+                      const ctx = await prepareSessionContext(String(next.patient_id));
+                      setPrep(ctx);
+                      setHint(
+                        `Preparação: ${String(
+                          (ctx.suggested_focus as string) ||
+                            (ctx.last_session_summary as { focus?: string } | undefined)?.focus ||
+                            "contexto carregado",
+                        )}`,
+                      );
+                      onPreparePatient?.(String(next.patient_id));
+                    }}
+                  >
+                    Preparar
+                  </button>
+                  <button
+                    className="rounded-xl bg-emerald-800 px-4 py-2 text-sm text-white"
+                    onClick={async () => {
+                      const session = await startSession(
+                        String(next.patient_id),
+                        String(next.id),
+                      );
+                      onOpenSession(session.id);
+                    }}
+                  >
+                    Iniciar sessão
+                  </button>
+                </>
+              ) : (
+                <span className="rounded-xl bg-emerald-100 px-3 py-2 text-xs text-emerald-800">
+                  Sessão clínica restrita ao perfil clínico
+                </span>
+              )}
             </div>
           </div>
         ) : (
@@ -193,16 +206,18 @@ export default function MyDayPage({ onOpenSession, onPreparePatient }: Props) {
                 >
                   Copiar mensagem
                 </button>
-                <button
-                  className="rounded-lg border px-3 py-1.5 text-sm"
-                  onClick={async () => {
-                    const ctx = await prepareSessionContext(String(a.patient_id));
-                    setPrep(ctx);
-                    setHint(`Preparação para ${String(a.patient_display_name || "paciente")}.`);
-                  }}
-                >
-                  Preparar
-                </button>
+                {clinicalAccess && (
+                  <button
+                    className="rounded-lg border px-3 py-1.5 text-sm"
+                    onClick={async () => {
+                      const ctx = await prepareSessionContext(String(a.patient_id));
+                      setPrep(ctx);
+                      setHint(`Preparação para ${String(a.patient_display_name || "paciente")}.`);
+                    }}
+                  >
+                    Preparar
+                  </button>
+                )}
                 <button
                   className="rounded-lg border border-red-200 px-3 py-1.5 text-sm text-red-700"
                   onClick={async () => {
@@ -231,39 +246,43 @@ export default function MyDayPage({ onOpenSession, onPreparePatient }: Props) {
                 >
                   Falta
                 </button>
-                <button
-                  className="rounded-lg bg-emerald-800 px-3 py-1.5 text-sm text-white"
-                  onClick={async () => {
-                    const session = await startSession(String(a.patient_id), String(a.id));
-                    onOpenSession(session.id);
-                  }}
-                >
-                  Sessão
-                </button>
+                {clinicalAccess ? (
+                  <button
+                    className="rounded-lg bg-emerald-800 px-3 py-1.5 text-sm text-white"
+                    onClick={async () => {
+                      const session = await startSession(String(a.patient_id), String(a.id));
+                      onOpenSession(session.id);
+                    }}
+                  >
+                    Sessão
+                  </button>
+                ) : null}
               </div>
             </div>
           ))}
         </div>
       </section>
 
-      <section className="rounded-2xl border border-emerald-200 bg-white/70 p-5 shadow-sm">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-emerald-700">
-          Registros incompletos
-        </h2>
-        {incomplete.length === 0 ? (
-          <p className="text-sm text-emerald-800/70">Tudo em dia nos registros.</p>
-        ) : (
-          incomplete.map((s) => (
-            <button
-              key={String(s.id)}
-              className="mb-2 block w-full rounded-xl border px-3 py-3 text-left hover:bg-emerald-50"
-              onClick={() => onOpenSession(String(s.id))}
-            >
-              {String(s.patient_display_name || "")} — {String(s.primary_action || "Continuar")}
-            </button>
-          ))
-        )}
-      </section>
+      {clinicalAccess && (
+        <section className="rounded-2xl border border-emerald-200 bg-white/70 p-5 shadow-sm">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-emerald-700">
+            Registros incompletos
+          </h2>
+          {incomplete.length === 0 ? (
+            <p className="text-sm text-emerald-800/70">Tudo em dia nos registros.</p>
+          ) : (
+            incomplete.map((s) => (
+              <button
+                key={String(s.id)}
+                className="mb-2 block w-full rounded-xl border px-3 py-3 text-left hover:bg-emerald-50"
+                onClick={() => onOpenSession(String(s.id))}
+              >
+                {String(s.patient_display_name || "")} — {String(s.primary_action || "Continuar")}
+              </button>
+            ))
+          )}
+        </section>
+      )}
 
       <section className="rounded-2xl border border-emerald-200 bg-white/70 p-5 shadow-sm">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-emerald-700">

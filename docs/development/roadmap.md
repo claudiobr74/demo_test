@@ -44,8 +44,11 @@
 - Agenda com recorrência; taxa de sessão no cadastro; tarefas rápidas (feito)
 - Hub: formulação viva + plano terapêutico/metas (feito)
 - Financeiro: abas Hoje/Recebimentos/Despesas/Relatórios + cópia contábil (feito)
-- Continuar portando detalhes do `src/legacy/` (ActiveSession áudio/transcrição)
-- PWA install flow (Sidebar já tem prompt — validar em produção)
+- Agenda React: visão semana + DnD + ±15 min; documentos com edição de rascunho (feito)
+- Supervisor/Sessão: aceite de sugestões IA → memória/notas (feito)
+- Cadastro editável + gates de secretaria no hub/Meu Dia (feito)
+- Continuar portando detalhes do `src/legacy/` (ActiveSession áudio/transcrição — P2)
+- PWA: service worker (manifest/prompt já existem)
 
 ### P2/P3 restante
 - Transcrição opcional → proposta → revisão humana (não vira prontuário sozinha)

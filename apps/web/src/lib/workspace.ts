@@ -121,6 +121,25 @@ export async function createPatient(payload: {
   });
 }
 
+export async function updatePatient(
+  patientId: string,
+  payload: {
+    first_name?: string;
+    last_name?: string;
+    preferred_name?: string;
+    email?: string | null;
+    phone?: string | null;
+    session_fee?: number | string | null;
+    status?: string;
+    version?: number;
+  },
+): Promise<Patient> {
+  return apiJson<Patient>(`/api/v1/patients/${patientId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function getToday() {
   return apiJson<Record<string, unknown>>("/api/v1/today");
 }
@@ -289,10 +308,27 @@ export async function createDocument(payload: {
   });
 }
 
+export async function updateDocument(
+  documentId: string,
+  payload: { title?: string; body?: string },
+): Promise<DocItem> {
+  return apiJson<DocItem>(`/api/v1/documents/${documentId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function finalizeDocument(documentId: string) {
   return apiJson(`/api/v1/documents/${documentId}/finalize`, {
     method: "POST",
     body: JSON.stringify({ confirm: true }),
+  });
+}
+
+export async function enqueueConfirmation(appointmentId: string, channel = "whatsapp") {
+  return apiJson(`/api/v1/confirmations/appointments/${appointmentId}/enqueue`, {
+    method: "POST",
+    body: JSON.stringify({ channel }),
   });
 }
 
@@ -561,6 +597,7 @@ export async function buildLocalBackupExport(): Promise<Record<string, unknown>>
 export async function runSupervisor(payload: {
   mode: string;
   patient_id: string;
+  import_hypotheses?: boolean;
 }): Promise<Record<string, unknown>> {
   return apiJson("/api/v1/supervisor/run", {
     method: "POST",

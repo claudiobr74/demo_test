@@ -27,9 +27,15 @@ type Props = {
   patientId: string;
   onClose: () => void;
   onOpenSession: (sessionId: string) => void;
+  clinicalAccess?: boolean;
 };
 
-export default function PatientHubPage({ patientId, onClose, onOpenSession }: Props) {
+export default function PatientHubPage({
+  patientId,
+  onClose,
+  onOpenSession,
+  clinicalAccess = true,
+}: Props) {
   const [patient, setPatient] = useState<Patient | null>(null);
   const [memory, setMemory] = useState<Record<string, unknown>[]>([]);
   const [consents, setConsents] = useState<Record<string, unknown>[]>([]);
@@ -111,21 +117,34 @@ export default function PatientHubPage({ patientId, onClose, onOpenSession }: Pr
             </p>
           </div>
         </div>
-        <button
-          className="rounded-xl bg-emerald-800 px-4 py-2 text-sm text-white"
-          onClick={async () => {
-            const session = await startSession(patientId);
-            onOpenSession(session.id);
-          }}
-        >
-          Iniciar sessão
-        </button>
+        {clinicalAccess ? (
+          <button
+            className="rounded-xl bg-emerald-800 px-4 py-2 text-sm text-white"
+            onClick={async () => {
+              const session = await startSession(patientId);
+              onOpenSession(session.id);
+            }}
+          >
+            Iniciar sessão
+          </button>
+        ) : (
+          <span className="rounded-xl bg-emerald-100 px-3 py-2 text-xs text-emerald-800">
+            Acesso clínico restrito
+          </span>
+        )}
       </header>
 
       {hint && <p className="rounded-xl bg-emerald-100 px-3 py-2 text-sm">{hint}</p>}
       {error && <p className="text-sm text-red-700">{error}</p>}
 
-      {prep && (
+      {!clinicalAccess && (
+        <section className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 text-sm text-amber-950">
+          Perfil de secretaria: cadastro, agenda e financeiro disponíveis. Formulação, memória
+          clínica e plano terapêutico ficam no perfil clínico.
+        </section>
+      )}
+
+      {clinicalAccess && prep && (
         <section className="rounded-2xl border border-emerald-200 bg-white/70 p-4 text-sm">
           <h2 className="mb-2 font-semibold text-emerald-800">Preparar próxima sessão</h2>
           <p className="text-emerald-900/80">
@@ -137,6 +156,8 @@ export default function PatientHubPage({ patientId, onClose, onOpenSession }: Pr
         </section>
       )}
 
+      {clinicalAccess && (
+        <>
       <section className="rounded-2xl border border-emerald-200 bg-white/70 p-4 space-y-3">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-emerald-700">
           Formulação viva
@@ -253,20 +274,6 @@ export default function PatientHubPage({ patientId, onClose, onOpenSession }: Pr
           )}
         </div>
       </section>
-
-      {packages.length > 0 && (
-        <section className="rounded-2xl border border-emerald-200 bg-white/70 p-4">
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-emerald-700">
-            Pacotes
-          </h2>
-          {packages.map((pkg) => (
-            <div key={pkg.id} className="mb-2 rounded-xl border px-3 py-2 text-sm">
-              {pkg.used_sessions}/{pkg.total_sessions} usadas · restam {pkg.remaining_sessions} ·{" "}
-              {pkg.status}
-            </div>
-          ))}
-        </section>
-      )}
 
       <section className="rounded-2xl border border-emerald-200 bg-white/70 p-4">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-emerald-700">
@@ -400,6 +407,22 @@ export default function PatientHubPage({ patientId, onClose, onOpenSession }: Pr
           <p className="text-sm text-emerald-800/70">Nenhum registro clínico ainda.</p>
         )}
       </section>
+        </>
+      )}
+
+      {packages.length > 0 && (
+        <section className="rounded-2xl border border-emerald-200 bg-white/70 p-4">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-emerald-700">
+            Pacotes
+          </h2>
+          {packages.map((pkg) => (
+            <div key={pkg.id} className="mb-2 rounded-xl border px-3 py-2 text-sm">
+              {pkg.used_sessions}/{pkg.total_sessions} usadas · restam {pkg.remaining_sessions} ·{" "}
+              {pkg.status}
+            </div>
+          ))}
+        </section>
+      )}
     </div>
   );
 }

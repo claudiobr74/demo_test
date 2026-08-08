@@ -89,11 +89,27 @@ async def test_document_from_template(client: AsyncClient):
     assert "Hugo" in created.json()["body"]
     doc_id = created.json()["id"]
 
+    updated = await client.patch(
+        f"/api/v1/documents/{doc_id}",
+        headers=headers,
+        json={"title": "Declaração revisada", "body": "Texto revisado para Hugo Pires."},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["title"] == "Declaração revisada"
+    assert "revisado" in updated.json()["body"]
+
     finalized = await client.post(
         f"/api/v1/documents/{doc_id}/finalize",
         headers=headers,
         json={"confirm": True},
     )
+
+    blocked = await client.patch(
+        f"/api/v1/documents/{doc_id}",
+        headers=headers,
+        json={"body": "Não deve alterar"},
+    )
+    assert blocked.status_code == 422, blocked.text
     assert finalized.status_code == 200
     assert finalized.json()["status"] == "finalized"
 

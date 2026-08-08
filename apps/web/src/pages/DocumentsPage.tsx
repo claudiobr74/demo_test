@@ -6,6 +6,7 @@ import {
   getDocumentTemplates,
   getDocuments,
   getPatients,
+  updateDocument,
   type DocItem,
   type DocTemplate,
   type Patient,
@@ -17,6 +18,9 @@ export default function DocumentsPage() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [patientId, setPatientId] = useState("");
   const [templateId, setTemplateId] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editBody, setEditBody] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [hint, setHint] = useState<string | null>(null);
 
@@ -42,12 +46,18 @@ export default function DocumentsPage() {
     void load();
   }, []);
 
+  const startEdit = (d: DocItem) => {
+    setEditingId(d.id);
+    setEditTitle(d.title);
+    setEditBody(d.body || "");
+  };
+
   return (
     <div className="animate-fade-in space-y-6">
       <header>
         <h1 className="font-serif text-3xl text-emerald-950">Documentos</h1>
         <p className="mt-1 text-emerald-800/80">
-          Modelos e exportação na API — sem Google Docs/Drive.
+          Modelos, rascunhos editáveis e exportação — sem Google Docs/Drive.
         </p>
       </header>
 
@@ -80,9 +90,13 @@ export default function DocumentsPage() {
           onSubmit={async (e) => {
             e.preventDefault();
             if (!patientId || !templateId) return;
-            await createDocument({ patient_id: patientId, template_id: templateId });
+            const created = await createDocument({
+              patient_id: patientId,
+              template_id: templateId,
+            });
             setHint("Rascunho gerado a partir do modelo.");
             await load();
+            startEdit(created);
           }}
         >
           <label className="text-sm">
@@ -108,54 +122,98 @@ export default function DocumentsPage() {
       <div className="space-y-3">
         {items.map((d) => (
           <div key={d.id} className="rounded-2xl border border-emerald-200 bg-white/70 p-4">
-            <div className="font-medium">{d.title}</div>
-            <div className="mb-3 text-xs text-emerald-800/70">
-              {d.doc_type} · {d.status === "finalized" ? "Finalizado" : "Rascunho"}
-            </div>
-            <p className="mb-3 line-clamp-4 whitespace-pre-wrap text-sm">{d.body}</p>
-            <div className="flex flex-wrap gap-2">
-              <button
-                className="rounded-lg border px-3 py-1.5 text-sm"
-                onClick={async () => {
-                  await navigator.clipboard.writeText(d.body || "");
-                  setHint("Texto copiado.");
-                }}
-              >
-                Copiar
-              </button>
-              <button
-                className="rounded-lg border px-3 py-1.5 text-sm"
-                onClick={async () => {
-                  const exp = await exportDocument(d.id, "txt");
-                  await navigator.clipboard.writeText(exp.content);
-                  setHint(`TXT copiado (${exp.filename || "documento"}).`);
-                }}
-              >
-                Exportar TXT
-              </button>
-              <button
-                className="rounded-lg border px-3 py-1.5 text-sm"
-                onClick={async () => {
-                  const exp = await exportDocument(d.id, "html");
-                  await navigator.clipboard.writeText(exp.content);
-                  setHint(exp.print_hint || "HTML copiado.");
-                }}
-              >
-                Exportar HTML / PDF
-              </button>
-              {d.status !== "finalized" && (
-                <button
-                  className="rounded-lg bg-emerald-800 px-3 py-1.5 text-sm text-white"
-                  onClick={async () => {
-                    await finalizeDocument(d.id);
-                    setHint("Documento finalizado.");
-                    await load();
-                  }}
-                >
-                  Finalizar
-                </button>
-              )}
-            </div>
+            {editingId === d.id ? (
+              <div className="space-y-3">
+                <input
+                  className="w-full rounded-xl border px-3 py-2 font-medium"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                />
+                <textarea
+                  className="min-h-48 w-full rounded-xl border px-3 py-2 text-sm"
+                  value={editBody}
+                  onChange={(e) => setEditBody(e.target.value)}
+                />
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    className="rounded-lg bg-emerald-800 px-3 py-1.5 text-sm text-white"
+                    onClick={async () => {
+                      await updateDocument(d.id, { title: editTitle, body: editBody });
+                      setEditingId(null);
+                      setHint("Rascunho salvo.");
+                      await load();
+                    }}
+                  >
+                    Salvar rascunho
+                  </button>
+                  <button
+                    className="rounded-lg border px-3 py-1.5 text-sm"
+                    onClick={() => setEditingId(null)}
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="font-medium">{d.title}</div>
+                <div className="mb-3 text-xs text-emerald-800/70">
+                  {d.doc_type} · {d.status === "finalized" ? "Finalizado" : "Rascunho"}
+                </div>
+                <p className="mb-3 line-clamp-4 whitespace-pre-wrap text-sm">{d.body}</p>
+                <div className="flex flex-wrap gap-2">
+                  {d.status !== "finalized" && (
+                    <button
+                      className="rounded-lg border px-3 py-1.5 text-sm"
+                      onClick={() => startEdit(d)}
+                    >
+                      Editar
+                    </button>
+                  )}
+                  <button
+                    className="rounded-lg border px-3 py-1.5 text-sm"
+                    onClick={async () => {
+                      await navigator.clipboard.writeText(d.body || "");
+                      setHint("Texto copiado.");
+                    }}
+                  >
+                    Copiar
+                  </button>
+                  <button
+                    className="rounded-lg border px-3 py-1.5 text-sm"
+                    onClick={async () => {
+                      const exp = await exportDocument(d.id, "txt");
+                      await navigator.clipboard.writeText(exp.content);
+                      setHint(`TXT copiado (${exp.filename || "documento"}).`);
+                    }}
+                  >
+                    Exportar TXT
+                  </button>
+                  <button
+                    className="rounded-lg border px-3 py-1.5 text-sm"
+                    onClick={async () => {
+                      const exp = await exportDocument(d.id, "html");
+                      await navigator.clipboard.writeText(exp.content);
+                      setHint(exp.print_hint || "HTML copiado.");
+                    }}
+                  >
+                    Exportar HTML / PDF
+                  </button>
+                  {d.status !== "finalized" && (
+                    <button
+                      className="rounded-lg bg-emerald-800 px-3 py-1.5 text-sm text-white"
+                      onClick={async () => {
+                        await finalizeDocument(d.id);
+                        setHint("Documento finalizado.");
+                        await load();
+                      }}
+                    >
+                      Finalizar
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         ))}
         {items.length === 0 && (

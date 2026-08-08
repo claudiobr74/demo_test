@@ -1,6 +1,7 @@
 import { Suspense, lazy, useState } from "react";
 import { motion } from "motion/react";
 import {
+  canAccessClinical,
   getAccessToken,
   getStoredUser,
   loginWithPassword,
@@ -125,6 +126,7 @@ export default function App() {
       <Suspense fallback={<p className="p-8">Carregando paciente…</p>}>
         <PatientHubPage
           patientId={patientId}
+          clinicalAccess={canAccessClinical(user.role_key, user.permissions || [])}
           onClose={() => setPatientId(null)}
           onOpenSession={(id) => {
             setPatientId(null);
@@ -135,43 +137,53 @@ export default function App() {
     );
   }
 
-  const isSecretary = user.role_key === "secretary";
+  const clinicalAccess = canAccessClinical(user.role_key, user.permissions || []);
 
   const content = (() => {
     switch (tab) {
       case "meudia":
         return (
           <MyDayPage
+            clinicalAccess={clinicalAccess}
             onOpenSession={setSessionId}
-            onPreparePatient={(id) => {
-              setSupervisorPatientId(id);
-              setTab("supervisor");
-            }}
+            onPreparePatient={
+              clinicalAccess
+                ? (id) => {
+                    setSupervisorPatientId(id);
+                    setTab("supervisor");
+                  }
+                : undefined
+            }
           />
         );
       case "pacientes":
-        return <PatientsPage onOpenPatient={setPatientId} />;
+        return (
+          <PatientsPage
+            clinicalAccess={clinicalAccess}
+            onOpenPatient={setPatientId}
+          />
+        );
       case "agenda":
         return <AgendaPage />;
       case "financeiro":
         return <FinancePage />;
       case "documentos":
-        return isSecretary ? (
-          <p className="text-emerald-800">Documentos clínicos não estão disponíveis para secretaria.</p>
-        ) : (
+        return clinicalAccess ? (
           <DocumentsPage />
+        ) : (
+          <p className="text-emerald-800">Documentos clínicos não estão disponíveis para secretaria.</p>
         );
       case "supervisor":
-        return isSecretary ? (
-          <p className="text-emerald-800">Supervisor IA requer perfil clínico.</p>
-        ) : (
+        return clinicalAccess ? (
           <SupervisorPage initialPatientId={supervisorPatientId || undefined} />
+        ) : (
+          <p className="text-emerald-800">Supervisor IA requer perfil clínico.</p>
         );
       case "notebooklm":
-        return isSecretary ? (
-          <p className="text-emerald-800">Conhecimento clínico requer perfil clínico.</p>
-        ) : (
+        return clinicalAccess ? (
           <KnowledgePage />
+        ) : (
+          <p className="text-emerald-800">Conhecimento clínico requer perfil clínico.</p>
         );
       case "configuracoes":
         return (

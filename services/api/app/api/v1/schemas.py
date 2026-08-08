@@ -174,6 +174,11 @@ class DocumentFinalizeRequest(APIModel):
     confirm: bool = True
 
 
+class DocumentUpdateRequest(APIModel):
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    body: str | None = Field(default=None, min_length=1)
+
+
 class SupervisorRequest(APIModel):
     mode: str
     patient_id: UUID | None = None

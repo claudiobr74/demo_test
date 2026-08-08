@@ -1,5 +1,11 @@
 import { useEffect, useState } from "react";
-import { getPatients, runSupervisor, type Patient } from "../lib/workspace";
+import {
+  addCaseMemory,
+  getPatients,
+  runSupervisor,
+  upsertFormulationDraft,
+  type Patient,
+} from "../lib/workspace";
 
 type Props = { initialPatientId?: string };
 
@@ -9,6 +15,7 @@ export default function SupervisorPage({ initialPatientId }: Props) {
   const [mode, setMode] = useState("prepare_session");
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [hint, setHint] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -22,6 +29,12 @@ export default function SupervisorPage({ initialPatientId }: Props) {
       }
     })();
   }, [initialPatientId]);
+
+  const focuses = ((result?.suggested_focus as string[]) || []).filter(Boolean);
+  const questions = ((result?.questions as string[]) || []).filter(Boolean);
+  const hypotheses = ((result?.hypotheses as { statement?: string }[]) || [])
+    .map((h) => h.statement || "")
+    .filter(Boolean);
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -61,8 +74,15 @@ export default function SupervisorPage({ initialPatientId }: Props) {
           onClick={async () => {
             setLoading(true);
             setError(null);
+            setHint(null);
             try {
-              setResult(await runSupervisor({ mode, patient_id: patientId }));
+              setResult(
+                await runSupervisor({
+                  mode,
+                  patient_id: patientId,
+                  import_hypotheses: mode === "case_formulation",
+                }),
+              );
             } catch (e) {
               setError(e instanceof Error ? e.message : "Falha no Supervisor");
             } finally {
@@ -75,6 +95,7 @@ export default function SupervisorPage({ initialPatientId }: Props) {
       </div>
 
       {error && <p className="text-red-700">{error}</p>}
+      {hint && <p className="rounded-xl bg-emerald-100 px-3 py-2 text-sm">{hint}</p>}
 
       {result && (
         <div className="space-y-4 rounded-2xl border border-emerald-200 bg-white/70 p-5">
@@ -83,24 +104,91 @@ export default function SupervisorPage({ initialPatientId }: Props) {
               (result.epistemology_note as string) ||
               "Sugestão gerada."}
           </p>
+
           <div>
             <h3 className="mb-1 text-sm font-semibold text-emerald-800">Foco sugerido</h3>
-            <ul className="list-disc pl-5 text-sm">
-              {((result.suggested_focus as string[]) || []).map((f) => (
-                <li key={f}>{f}</li>
+            <ul className="space-y-2 text-sm">
+              {focuses.map((f) => (
+                <li key={f} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2">
+                  <span>{f}</span>
+                  <button
+                    className="rounded-lg border px-2 py-1 text-xs"
+                    onClick={async () => {
+                      await addCaseMemory(patientId, {
+                        kind: "observation",
+                        content: `Foco sugerido (aceito): ${f}`,
+                        provenance: [{ resource_type: "ai_suggestion", note: mode }],
+                      });
+                      await upsertFormulationDraft(patientId, {
+                        body: { therapeutic_focus: f },
+                      });
+                      setHint("Foco aceito na memória do caso e no rascunho de formulação.");
+                    }}
+                  >
+                    Aceitar
+                  </button>
+                </li>
               ))}
+              {focuses.length === 0 && <li className="text-emerald-800/70">Nenhum foco listado.</li>}
             </ul>
           </div>
+
           <div>
             <h3 className="mb-1 text-sm font-semibold text-emerald-800">Perguntas</h3>
-            <ul className="list-disc pl-5 text-sm">
-              {((result.questions as string[]) || []).map((q) => (
-                <li key={q}>{q}</li>
+            <ul className="space-y-2 text-sm">
+              {questions.map((q) => (
+                <li key={q} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2">
+                  <span>{q}</span>
+                  <button
+                    className="rounded-lg border px-2 py-1 text-xs"
+                    onClick={async () => {
+                      await addCaseMemory(patientId, {
+                        kind: "observation",
+                        content: `Pergunta útil (aceita): ${q}`,
+                        provenance: [{ resource_type: "ai_suggestion", note: mode }],
+                      });
+                      setHint("Pergunta salva na memória do caso.");
+                    }}
+                  >
+                    Aceitar
+                  </button>
+                </li>
               ))}
             </ul>
           </div>
+
+          {hypotheses.length > 0 && (
+            <div>
+              <h3 className="mb-1 text-sm font-semibold text-emerald-800">Hipóteses</h3>
+              <ul className="space-y-2 text-sm">
+                {hypotheses.map((h) => (
+                  <li
+                    key={h}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2"
+                  >
+                    <span>{h}</span>
+                    <button
+                      className="rounded-lg border px-2 py-1 text-xs"
+                      onClick={async () => {
+                        await addCaseMemory(patientId, {
+                          kind: "hypothesis",
+                          content: h,
+                          provenance: [{ resource_type: "ai_suggestion", note: mode }],
+                        });
+                        setHint("Hipótese registrada como sugestão (revisão profissional).");
+                      }}
+                    >
+                      Aceitar
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <p className="text-xs text-emerald-800/70">
-            Offline assist disponível se o LLM estiver indisponível.
+            Nada entra no prontuário oficial sem o seu aceite. Offline assist disponível se o LLM
+            estiver indisponível.
           </p>
         </div>
       )}

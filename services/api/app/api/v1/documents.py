@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import AuthContext, get_current_auth
-from app.api.v1.schemas import DocumentCreateRequest, DocumentFinalizeRequest
+from app.api.v1.schemas import DocumentCreateRequest, DocumentFinalizeRequest, DocumentUpdateRequest
 from app.application.document_service import DocumentService
 from app.infrastructure.db.session import get_db
 
@@ -47,6 +47,18 @@ async def get_document(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     return await DocumentService(db, auth).get(document_id)
+
+
+@router.patch("/{document_id}")
+async def update_document(
+    document_id: UUID,
+    body: DocumentUpdateRequest,
+    auth: AuthContext = Depends(get_current_auth),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    return await DocumentService(db, auth).update_draft(
+        document_id, body.model_dump(exclude_unset=True)
+    )
 
 
 @router.post("/{document_id}/finalize")

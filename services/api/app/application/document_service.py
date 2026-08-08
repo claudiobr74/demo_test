@@ -170,6 +170,31 @@ class DocumentService:
         doc = await self._owned_doc(document_id)
         return self._doc_dto(doc)
 
+    async def update_draft(self, document_id: uuid.UUID, data: dict) -> dict:
+        self.auth.require(Permission.DOCUMENT_WRITE)
+        doc = await self._owned_doc(document_id)
+        if doc.status == "finalized":
+            raise ValidationAppError("Documento finalizado não pode ser editado.")
+        if data.get("title"):
+            doc.title = str(data["title"]).strip()
+        if data.get("body") is not None:
+            body = str(data["body"]).strip()
+            if not body:
+                raise ValidationAppError("Conteúdo do documento obrigatório.")
+            doc.body = body
+        await write_audit(
+            self.db,
+            organization_id=self.auth.organization_id,
+            actor_user_id=self.auth.user_id,
+            action="document.updated",
+            resource_type="document",
+            resource_id=str(doc.id),
+            request_id=self.auth.request_id,
+        )
+        await self.db.commit()
+        await self.db.refresh(doc)
+        return self._doc_dto(doc)
+
     async def finalize(self, document_id: uuid.UUID) -> dict:
         self.auth.require(Permission.DOCUMENT_WRITE)
         doc = await self._owned_doc(document_id)

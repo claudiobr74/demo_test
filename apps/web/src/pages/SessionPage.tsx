@@ -324,16 +324,70 @@ export default function SessionPage({ sessionId, onClose }: Props) {
                   {(aiResult.summary as { message?: string } | undefined)?.message ||
                     String(aiResult.epistemology_note || "")}
                 </p>
-                <ul className="list-disc pl-5">
-                  {((aiResult.suggested_focus as string[]) || []).map((f) => (
-                    <li key={f}>{f}</li>
-                  ))}
-                </ul>
-                <ul className="list-disc pl-5">
-                  {((aiResult.questions as string[]) || []).map((q) => (
-                    <li key={q}>{q}</li>
-                  ))}
-                </ul>
+                <div>
+                  <h3 className="mb-1 font-semibold text-emerald-800">Foco sugerido</h3>
+                  <ul className="space-y-2">
+                    {((aiResult.suggested_focus as string[]) || []).map((f) => (
+                      <li
+                        key={f}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2"
+                      >
+                        <span>{f}</span>
+                        <button
+                          className="rounded-lg border px-2 py-1 text-xs"
+                          onClick={() => {
+                            const next = focus ? `${focus}\n${f}` : f;
+                            setFocus(next);
+                            queueAutosave({
+                              focus: next,
+                              observations,
+                              interventions,
+                              agreements,
+                              planning,
+                              hypotheses,
+                            });
+                            setHint("Foco aceito nas notas da sessão.");
+                          }}
+                        >
+                          Aceitar nas notas
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <h3 className="mb-1 font-semibold text-emerald-800">Perguntas</h3>
+                  <ul className="space-y-2">
+                    {((aiResult.questions as string[]) || []).map((q) => (
+                      <li
+                        key={q}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2"
+                      >
+                        <span>{q}</span>
+                        <button
+                          className="rounded-lg border px-2 py-1 text-xs"
+                          onClick={() => {
+                            const next = planning
+                              ? `${planning}\n• ${q}`
+                              : `• ${q}`;
+                            setPlanning(next);
+                            queueAutosave({
+                              focus,
+                              observations,
+                              interventions,
+                              agreements,
+                              planning: next,
+                              hypotheses,
+                            });
+                            setHint("Pergunta aceita no planejamento.");
+                          }}
+                        >
+                          Aceitar
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               </div>
             )}
           </section>
