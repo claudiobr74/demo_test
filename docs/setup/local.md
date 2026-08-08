@@ -43,15 +43,16 @@ flutter pub get
 flutter run -d chrome
 ```
 
-## App + API juntos (recomendado)
+## Visualizar o app (Cloud Agent / local)
 
-Com a API em `:8000` e o Flutter web-server em `:8080`:
+**Uma única porta:** `8000` (API + Flutter web).
 
 ```bash
-python3 scripts/dev_gateway.py
+./scripts/start_demo.sh
 ```
 
-Abra **http://127.0.0.1:3000** (same-origin: o app chama `/api/v1` sem CORS/port-forward separado).
+No Cursor: **Ports** → forward **8000** → Open in Browser.
 
-Login seed: `dra.marina@serenapsi.dev` / `SerenaPsi!dev1`
+Login: `dra.marina@serenapsi.dev` / `SerenaPsi!dev1`
 
+> Não use a porta 3000. O app agora é servido junto com a API em `:8000`.
