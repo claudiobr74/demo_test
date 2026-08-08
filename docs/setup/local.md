@@ -43,8 +43,15 @@ flutter pub get
 flutter run -d chrome
 ```
 
-Configure `API_BASE_URL` via `--dart-define=API_BASE_URL=http://localhost:8000`.
+## App + API juntos (recomendado)
 
-## Healthcheck
+Com a API em `:8000` e o Flutter web-server em `:8080`:
 
-`GET http://localhost:8000/health`
+```bash
+python3 scripts/dev_gateway.py
+```
+
+Abra **http://127.0.0.1:3000** (same-origin: o app chama `/api/v1` sem CORS/port-forward separado).
+
+Login seed: `dra.marina@serenapsi.dev` / `SerenaPsi!dev1`
+
