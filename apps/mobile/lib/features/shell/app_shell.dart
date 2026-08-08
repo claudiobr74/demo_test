@@ -61,6 +61,7 @@ class _PhoneShell extends StatelessWidget {
       body: child,
       bottomNavigationBar: NavigationBar(
         selectedIndex: index,
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         onDestinationSelected: (i) => context.go(_items[i].path),
         destinations: [
           for (final item in _items)

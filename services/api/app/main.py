@@ -6,8 +6,10 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.types import ASGIApp
 
 from app.api.v1.router import api_router
 from app.core.config import settings
@@ -56,6 +58,26 @@ app.add_middleware(
 )
 app.add_middleware(RequestIdMiddleware)
 app.add_middleware(TenantIsolationMiddleware)
+
+
+class _NoCacheWebAssetsMiddleware(BaseHTTPMiddleware):
+    """Evita service worker / browser cache servir build Flutter antigo em dev."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        super().__init__(app)
+
+    async def dispatch(self, request: Request, call_next):  # type: ignore[no-untyped-def]
+        response: Response = await call_next(request)
+        path = request.url.path
+        if path == "/" or path.endswith(
+            (".html", ".js", ".json", "flutter_service_worker.js", "flutter_bootstrap.js")
+        ):
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+            response.headers["Pragma"] = "no-cache"
+        return response
+
+
+app.add_middleware(_NoCacheWebAssetsMiddleware)
 
 app.add_exception_handler(AppError, app_error_handler)
 app.add_exception_handler(Exception, unhandled_error_handler)

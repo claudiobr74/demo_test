@@ -27,6 +27,11 @@ class TodayPage extends ConsumerWidget {
           title: const Text('Meu Dia'),
           actions: [
             IconButton(
+              tooltip: 'Financeiro',
+              onPressed: () => context.go('/financeiro'),
+              icon: const Icon(Icons.payments_outlined),
+            ),
+            IconButton(
               tooltip: 'Sair',
               onPressed: () => ref.read(authControllerProvider.notifier).logout(),
               icon: const Icon(Icons.logout),
@@ -179,6 +184,7 @@ class _TodayContent extends StatelessWidget {
               _PendencyChip(
                 label: 'Pagamentos',
                 count: pendencies['pending_payments'] as int? ?? 0,
+                onTap: () => context.go('/financeiro'),
               ),
               _PendencyChip(
                 label: 'Consentimentos',
@@ -190,6 +196,12 @@ class _TodayContent extends StatelessWidget {
               ),
             ],
           ),
+        ),
+        const SizedBox(height: 20),
+        TextButton.icon(
+          onPressed: () => context.go('/financeiro'),
+          icon: const Icon(Icons.payments_outlined),
+          label: const Text('Abrir Financeiro'),
         ),
       ],
     );
@@ -376,13 +388,14 @@ class _ActionRow extends StatelessWidget {
 }
 
 class _PendencyChip extends StatelessWidget {
-  const _PendencyChip({required this.label, required this.count});
+  const _PendencyChip({required this.label, required this.count, this.onTap});
   final String label;
   final int count;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final child = Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         color: count > 0 ? SerenaColors.sage.withValues(alpha: 0.12) : SerenaColors.offWhite,
@@ -390,6 +403,12 @@ class _PendencyChip extends StatelessWidget {
         border: Border.all(color: SerenaColors.border),
       ),
       child: Text('$label · $count'),
+    );
+    if (onTap == null) return child;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(SerenaRadius.md),
+      child: child,
     );
   }
 }

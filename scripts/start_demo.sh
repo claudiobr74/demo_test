@@ -10,10 +10,31 @@ export AI_ENABLED="${AI_ENABLED:-false}"
 sudo service postgresql start >/dev/null 2>&1 || true
 
 cd "$ROOT/apps/mobile"
-if [[ ! -f build/web/index.html ]]; then
-  flutter pub get
-  flutter build web --release
-fi
+flutter pub get
+flutter build web --release --pwa-strategy=none
+# Desliga registro de SW mesmo com bootstrap gerado pelo Flutter.
+python3 - <<'PY'
+from pathlib import Path
+p = Path("build/web/flutter_bootstrap.js")
+t = p.read_text()
+t2 = t.replace(
+    """_flutter.loader.load({
+  serviceWorkerSettings: {
+    serviceWorkerVersion: """,
+    """_flutter.loader.load({
+  serviceWorkerSettings: null,
+  _disabledServiceWorkerVersion: """,
+)
+# fallback if formatting differs
+import re
+t2 = re.sub(
+    r"serviceWorkerSettings:\s*\{\s*serviceWorkerVersion:\s*\"[^\"]+\"\s*\}",
+    "serviceWorkerSettings: null",
+    t2,
+)
+p.write_text(t2)
+print("flutter_bootstrap patched: serviceWorker disabled")
+PY
 
 cd "$ROOT/services/api"
 test -f .env || cp .env.example .env

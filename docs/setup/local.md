@@ -55,4 +55,5 @@ No Cursor: **Ports** → forward **8000** → Open in Browser.
 
 Login: `dra.marina@serenapsi.dev` / `SerenaPsi!dev1`
 
-> Não use a porta 3000. O app agora é servido junto com a API em `:8000`.
+> Se o menu não atualizar após um deploy: hard refresh (Ctrl+Shift+R) ou abra em aba anônima.
+> O item **Financeiro** fica na navegação lateral/inferior e também em Meu Dia → ícone de pagamentos / “Abrir Financeiro”.
