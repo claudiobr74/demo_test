@@ -4,7 +4,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai_gateway import SupervisorMode, gateway
 from app.api.deps import AuthContext, require_permissions
 from app.api.v1.schemas import SupervisorRequest
+from app.application.ai_observability_service import AiObservabilityService, Timer
 from app.application.audit import write_audit
+from app.application.clinical_hypothesis_service import ClinicalHypothesisService
 from app.application.session_service import SessionService
 from app.core.errors import ValidationAppError
 from app.core.permissions import Permission
@@ -32,12 +34,27 @@ async def run_supervisor(
         context["patient_code"] = prep["patient"]["display_name"].split("•")[-1].strip()
         framework = prep["patient"]["framework"] or framework
 
+    timer = Timer()
     result = await gateway.run_supervisor(
         mode=mode,
         framework_id=framework,
         raw_context=context,
         user_message=body.message,
     )
+    latency_ms = timer.ms
+
+    obs = await AiObservabilityService(db, auth).record_supervisor_run(
+        mode=mode.value,
+        patient_id=body.patient_id,
+        result=result,
+        latency_ms=latency_ms,
+    )
+
+    imported: list[dict] = []
+    if body.patient_id and body.import_hypotheses and result.hypotheses:
+        imported = await ClinicalHypothesisService(db, auth).import_from_supervisor(
+            body.patient_id, result.hypotheses
+        )
 
     await write_audit(
         db,
@@ -47,10 +64,19 @@ async def run_supervisor(
         resource_type="ai_supervisor",
         resource_id=mode.value,
         request_id=auth.request_id,
-        metadata={"framework": framework, "offline": result.metadata.get("provider") == "none"},
+        metadata={
+            "framework": framework,
+            "offline": result.metadata.get("provider") == "none",
+            "ai_request_id": obs["request_id"],
+            "latency_ms": latency_ms,
+        },
     )
     await db.commit()
-    return result.to_dict()
+    payload = result.to_dict()
+    payload["observability"] = obs
+    if imported:
+        payload["imported_hypotheses"] = imported
+    return payload
 
 
 @router.get("/modes")

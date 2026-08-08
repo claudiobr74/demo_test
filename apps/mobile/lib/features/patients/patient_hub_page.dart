@@ -39,6 +39,24 @@ final patientMemoryProvider =
       .toList();
 });
 
+final patientHypothesesProvider =
+    FutureProvider.autoDispose.family<List<Map<String, dynamic>>, String>((ref, id) async {
+  final client = ref.watch(apiClientProvider);
+  final data = await client.get('/api/v1/hypotheses/patients/$id');
+  return (data['items'] as List? ?? [])
+      .map((e) => Map<String, dynamic>.from(e as Map))
+      .toList();
+});
+
+final patientAiHistoryProvider =
+    FutureProvider.autoDispose.family<List<Map<String, dynamic>>, String>((ref, id) async {
+  final client = ref.watch(apiClientProvider);
+  final data = await client.get('/api/v1/ai/history/patients/$id');
+  return (data['items'] as List? ?? [])
+      .map((e) => Map<String, dynamic>.from(e as Map))
+      .toList();
+});
+
 class PatientHubPage extends ConsumerWidget {
   const PatientHubPage({super.key, required this.patientId});
 
@@ -50,6 +68,8 @@ class PatientHubPage extends ConsumerWidget {
     final consents = ref.watch(patientConsentsProvider(patientId));
     final records = ref.watch(patientRecordsProvider(patientId));
     final memory = ref.watch(patientMemoryProvider(patientId));
+    final hypotheses = ref.watch(patientHypothesesProvider(patientId));
+    final aiHistory = ref.watch(patientAiHistoryProvider(patientId));
 
     return patient.when(
       loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
@@ -107,7 +127,10 @@ class PatientHubPage extends ConsumerWidget {
                         final result = await client.post('/api/v1/supervisor/run', body: {
                           'mode': 'prepare_session',
                           'patient_id': patientId,
+                          'import_hypotheses': true,
                         });
+                        ref.invalidate(patientAiHistoryProvider(patientId));
+                        ref.invalidate(patientHypothesesProvider(patientId));
                         if (!context.mounted) return;
                         await showModalBottomSheet<void>(
                           context: context,
@@ -145,11 +168,73 @@ class PatientHubPage extends ConsumerWidget {
               ),
               const SizedBox(height: 20),
               SerenaSection(
+                title: 'Hipóteses clínicas',
+                child: hypotheses.when(
+                  loading: () => const LinearProgressIndicator(),
+                  error: (e, _) => Text(e.toString()),
+                  data: (items) => _HypothesesBlock(patientId: patientId, items: items),
+                ),
+              ),
+              const SizedBox(height: 20),
+              SerenaSection(
                 title: 'Memória do caso',
                 child: memory.when(
                   loading: () => const LinearProgressIndicator(),
                   error: (e, _) => Text(e.toString()),
                   data: (items) => _CaseMemoryBlock(patientId: patientId, items: items),
+                ),
+              ),
+              const SizedBox(height: 20),
+              SerenaSection(
+                title: 'Histórico do Supervisor',
+                child: aiHistory.when(
+                  loading: () => const LinearProgressIndicator(),
+                  error: (e, _) => Text(e.toString()),
+                  data: (items) {
+                    if (items.isEmpty) {
+                      return Text(
+                        'Nenhuma execução registrada ainda.',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      );
+                    }
+                    return Column(
+                      children: [
+                        for (final h in items.take(5))
+                          ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(h['task'] as String? ?? ''),
+                            subtitle: Text(
+                              [
+                                h['provider'] ?? '',
+                                if (h['latency_ms'] != null) '${h['latency_ms']} ms',
+                                h['summary_message'] ?? '',
+                              ].where((e) => e.toString().isNotEmpty).join(' · '),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            trailing: h['output_id'] != null
+                                ? IconButton(
+                                    tooltip: 'Útil',
+                                    icon: const Icon(Icons.thumb_up_outlined, size: 18),
+                                    onPressed: () async {
+                                      await ref.read(apiClientProvider).post(
+                                        '/api/v1/ai/feedback',
+                                        body: {
+                                          'output_id': h['output_id'],
+                                          'useful': true,
+                                        },
+                                      );
+                                      if (!context.mounted) return;
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(content: Text('Feedback registrado.')),
+                                      );
+                                    },
+                                  )
+                                : null,
+                          ),
+                      ],
+                    );
+                  },
                 ),
               ),
               const SizedBox(height: 20),
@@ -207,6 +292,128 @@ class PatientHubPage extends ConsumerWidget {
       ),
     );
   }
+}
+
+class _HypothesesBlock extends ConsumerWidget {
+  const _HypothesesBlock({required this.patientId, required this.items});
+  final String patientId;
+  final List<Map<String, dynamic>> items;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (items.isEmpty)
+          Text(
+            'Nenhuma hipótese clínica ainda. O Supervisor pode sugerir — você decide.',
+            style: Theme.of(context).textTheme.bodyMedium,
+          )
+        else
+          for (final h in items.take(8))
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(h['statement'] as String? ?? ''),
+                        Text(
+                          _strength(h['strength'] as String?) +
+                              (h['pending_review'] == true ? ' · aguardando aceite' : '') +
+                              (h['formulation_id'] != null ? ' · ligada à formulação' : ''),
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: SerenaColors.inkSoft,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (h['pending_review'] == true)
+                    TextButton(
+                      onPressed: () async {
+                        await ref.read(apiClientProvider).post(
+                          '/api/v1/hypotheses/${h['id']}/accept',
+                        );
+                        ref.invalidate(patientHypothesesProvider(patientId));
+                      },
+                      child: const Text('Aceitar'),
+                    )
+                  else if (h['strength'] == 'active')
+                    TextButton(
+                      onPressed: () async {
+                        await ref.read(apiClientProvider).post(
+                          '/api/v1/hypotheses/${h['id']}/strength',
+                          body: {'strength': 'strengthened'},
+                        );
+                        ref.invalidate(patientHypothesesProvider(patientId));
+                      },
+                      child: const Text('Fortalecer'),
+                    ),
+                ],
+              ),
+            ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: () => _add(context, ref),
+          icon: const Icon(Icons.add),
+          label: const Text('Nova hipótese'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _add(BuildContext context, WidgetRef ref) async {
+    final ctrl = TextEditingController();
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) {
+        final bottom = MediaQuery.viewInsetsOf(ctx).bottom;
+        return Padding(
+          padding: EdgeInsets.fromLTRB(24, 8, 24, 24 + bottom),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Nova hipótese', style: Theme.of(ctx).textTheme.headlineMedium),
+              const SizedBox(height: 12),
+              TextField(
+                controller: ctrl,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'Enunciado',
+                  alignLabelWithHint: true,
+                ),
+              ),
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Salvar'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (ok != true || ctrl.text.trim().isEmpty) return;
+    await ref.read(apiClientProvider).post(
+      '/api/v1/hypotheses/patients/$patientId',
+      body: {'statement': ctrl.text.trim()},
+    );
+    ref.invalidate(patientHypothesesProvider(patientId));
+  }
+
+  String _strength(String? s) => switch (s) {
+        'strengthened' => 'Fortalecida',
+        'weakened' => 'Enfraquecida',
+        'retired' => 'Aposentada',
+        _ => 'Ativa',
+      };
 }
 
 class _CaseMemoryBlock extends ConsumerWidget {

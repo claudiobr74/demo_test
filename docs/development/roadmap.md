@@ -21,6 +21,9 @@
 - Providers OpenAI e Gemini plugáveis (fallback offline)
 - Ajuste rápido de horário na agenda (−15 / +15 min)
 - Plano terapêutico + metas (API + hub + Preparar sessão)
+- Observabilidade AI (AiRequest/AiOutput + feedback)
+- Hipóteses clínicas ligadas à formulação (aceite de sugestões)
+- Fila de confirmação multi-canal (stub de entrega)
 
 ## Próximo
 
@@ -28,11 +31,11 @@
 - Drag-and-drop visual completo na agenda
 
 ### P2
-- Observabilidade AI (AiRequest/AiOutput persistidos)
-- Hipóteses clínicas versionadas ligadas à formulação
+- Painel de custo/latência AI na organização
+- Deep-links de proveniência → sessão/prontuário
 
 ### P3
-- Confirmações multi-canal (envio real)
+- Providers reais WhatsApp/SMS/email
 - PDF/export e armazenamento de documentos
 
 ### P4–P5

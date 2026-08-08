@@ -140,6 +140,32 @@ class SupervisorRequest(APIModel):
     framework: str | None = None
     message: str | None = None
     context: dict[str, Any] = Field(default_factory=dict)
+    import_hypotheses: bool = False
+
+
+class AiFeedbackRequest(APIModel):
+    output_id: UUID
+    useful: bool
+    reasons: list[str] | None = None
+    comment: str | None = None
+
+
+class ClinicalHypothesisCreateRequest(APIModel):
+    statement: str = Field(min_length=1)
+    epistemology: str | None = None
+    strength: str | None = None
+    formulation_id: UUID | None = None
+    framework: str | None = None
+    provenance: list[dict[str, Any]] | None = None
+    created_by: str | None = None
+
+
+class ClinicalHypothesisStrengthRequest(APIModel):
+    strength: str
+
+
+class ConfirmationEnqueueRequest(APIModel):
+    channel: str | None = "whatsapp"
 
 
 class ConsentCreateRequest(APIModel):

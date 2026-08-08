@@ -328,6 +328,10 @@ class _AppointmentCard extends ConsumerWidget {
                   child: const Text('Mensagem'),
                 ),
                 OutlinedButton(
+                  onPressed: () => _enqueueConfirmation(context, ref),
+                  child: const Text('Enfileirar'),
+                ),
+                OutlinedButton(
                   onPressed: () => _status(ref, 'no_show'),
                   child: const Text('Falta'),
                 ),
@@ -363,6 +367,27 @@ class _AppointmentCard extends ConsumerWidget {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Mensagem copiada — cole no WhatsApp ou SMS.')),
       );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    }
+  }
+
+  Future<void> _enqueueConfirmation(BuildContext context, WidgetRef ref) async {
+    try {
+      final data = await ref.read(apiClientProvider).post(
+            '/api/v1/confirmations/appointments/${item['id']}/enqueue',
+            body: {'channel': 'whatsapp'},
+          );
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Confirmação enfileirada (${data['channel']}). Envio real será plugado depois.',
+          ),
+        ),
+      );
+      onChanged();
     } catch (e) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
