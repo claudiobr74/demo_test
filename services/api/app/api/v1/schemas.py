@@ -161,6 +161,28 @@ class SessionCloseRequest(APIModel):
     finalize_record: bool = True
 
 
+class TranscriptionProposeRequest(APIModel):
+    """Audio and/or raw transcript → revisable CFP-shaped proposal (never auto-finalizes record)."""
+
+    audio_base64: str | None = Field(default=None, max_length=12_000_000)
+    mime_type: str | None = Field(default=None, max_length=120)
+    transcript_text: str | None = Field(default=None, max_length=100_000)
+
+
+class TranscriptionApplyRequest(APIModel):
+    """Human acceptance of a CFP proposal into session draft fields only."""
+
+    focus: str | None = None
+    evolution: str | None = None
+    relevant_observations: str | None = None
+    interventions: str | None = None
+    tasks: str | None = None
+    planning: str | None = None
+    agreements: str | None = None
+    store_transcript: bool = True
+    version: int | None = None
+
+
 class DocumentCreateRequest(APIModel):
     patient_id: UUID | None = None
     template_id: UUID | None = None

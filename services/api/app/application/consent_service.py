@@ -136,6 +136,90 @@ class ConsentService:
         await self.db.refresh(consent)
         return self._consent_dto(consent)
 
+    async def check(self, patient_id: uuid.UUID, *, consent_type: str) -> dict:
+        """Fail-closed consent gate — allowed only with an active accepted consent."""
+        self.auth.require(Permission.CONSENT_READ)
+        await self._owned_patient(patient_id)
+        if consent_type not in VALID_TYPES:
+            raise ValidationAppError("Tipo de consentimento inválido.")
+
+        rows = (
+            await self.db.execute(
+                select(Consent)
+                .where(
+                    Consent.organization_id == self.auth.organization_id,
+                    Consent.patient_id == patient_id,
+                    Consent.consent_type == consent_type,
+                )
+                .order_by(Consent.created_at.desc())
+            )
+        ).scalars().all()
+
+        if not rows:
+            return {
+                "allowed": False,
+                "consent_type": consent_type,
+                "status": None,
+                "reason": "Nenhum consentimento registrado para este tipo.",
+            }
+
+        now = datetime.now(UTC)
+        latest = rows[0]
+        if latest.status == "accepted":
+            if latest.revoked_at is not None:
+                return {
+                    "allowed": False,
+                    "consent_type": consent_type,
+                    "status": "revoked",
+                    "reason": "Consentimento revogado.",
+                    "consent_id": str(latest.id),
+                }
+            if latest.expires_at is not None and latest.expires_at < now:
+                return {
+                    "allowed": False,
+                    "consent_type": consent_type,
+                    "status": "expired",
+                    "reason": "Consentimento expirado.",
+                    "consent_id": str(latest.id),
+                }
+            return {
+                "allowed": True,
+                "consent_type": consent_type,
+                "status": "accepted",
+                "reason": None,
+                "consent_id": str(latest.id),
+                "version": latest.version,
+            }
+
+        return {
+            "allowed": False,
+            "consent_type": consent_type,
+            "status": latest.status,
+            "reason": f"Consentimento em status '{latest.status}'.",
+            "consent_id": str(latest.id),
+        }
+
+    async def require_accepted(self, patient_id: uuid.UUID, *, consent_type: str) -> dict:
+        """Raise if consent is not accepted — used by recording/transcription gates."""
+        from app.core.errors import AppError
+
+        result = await self.check(patient_id, consent_type=consent_type)
+        if not result.get("allowed"):
+            raise AppError(
+                "CONSENT_REQUIRED",
+                (
+                    "Consentimento específico não aceito. "
+                    "Gravação e transcrição ficam bloqueadas até o aceite do termo."
+                ),
+                status_code=403,
+                details={
+                    "consent_type": consent_type,
+                    "status": result.get("status"),
+                    "reason": result.get("reason"),
+                },
+            )
+        return result
+
     async def record_decision(
         self,
         consent_id: uuid.UUID,

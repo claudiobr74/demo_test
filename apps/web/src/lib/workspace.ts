@@ -50,9 +50,24 @@ export interface SessionRecord {
   tasks?: string | null;
   agreements?: string | null;
   planning?: string | null;
+  structured_data?: Record<string, unknown> | null;
   started_at?: string | null;
   version?: number;
   appointment_id?: string | null;
+}
+
+/** Proposta revisável no modelo de prontuário CFP (não é ClinicalRecord finalizado). */
+export interface CfpProposal {
+  focus?: string | null;
+  evolution?: string | null;
+  relevant_observations?: string | null;
+  interventions?: string | null;
+  tasks?: string | null;
+  planning?: string | null;
+  agreements?: string | null;
+  mode?: string | null;
+  epistemology_note?: string | null;
+  status?: string | null;
 }
 
 export interface DocTemplate {
@@ -236,6 +251,50 @@ export async function deferSessionClosure(sessionId: string) {
 
 export async function prepareSessionContext(patientId: string) {
   return apiJson<Record<string, unknown>>(`/api/v1/sessions/prepare/${patientId}`);
+}
+
+export async function checkConsent(patientId: string, consentType: ConsentType | string) {
+  return apiJson<{
+    allowed: boolean;
+    consent_type: string;
+    status?: string | null;
+    reason?: string | null;
+    consent_id?: string;
+  }>(`/api/v1/consents/patients/${patientId}/check?type=${encodeURIComponent(consentType)}`);
+}
+
+export async function proposeSessionTranscription(
+  sessionId: string,
+  payload: {
+    audio_base64?: string;
+    mime_type?: string;
+    transcript_text?: string;
+  },
+) {
+  return apiJson<{
+    session_id: string;
+    version: number;
+    proposal: CfpProposal;
+    transcript: string;
+    applied_to_record: boolean;
+    note?: string;
+  }>(`/api/v1/sessions/${sessionId}/transcription/propose`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function applySessionTranscription(
+  sessionId: string,
+  payload: CfpProposal & { store_transcript?: boolean; version?: number },
+) {
+  return apiJson<SessionRecord & { applied_to_record?: boolean; note?: string }>(
+    `/api/v1/sessions/${sessionId}/transcription/apply`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
 }
 
 export async function getPatient(patientId: string): Promise<Patient> {

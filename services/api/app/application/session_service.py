@@ -245,6 +245,186 @@ class SessionService:
         patient = await self.db.get(Patient, patient_id)
         return [self._to_dto(s, patient) for s in rows]
 
+    async def propose_transcription(
+        self,
+        session_id: uuid.UUID,
+        *,
+        audio_base64: str | None = None,
+        mime_type: str | None = None,
+        transcript_text: str | None = None,
+    ) -> dict:
+        """STT + CFP-shaped proposal stored as revisable draft — never finalizes ClinicalRecord."""
+        self.auth.require(Permission.TRANSCRIPT_WRITE)
+        self.auth.require(Permission.SESSION_WRITE)
+        session = await self._owned_session(session_id)
+        if session.status not in {"draft", "in_progress", "pending_closure"}:
+            raise ValidationAppError("Sessão finalizada não aceita nova transcrição.")
+
+        from app.ai_gateway import gateway
+        from app.application.consent_service import ConsentService
+
+        await ConsentService(self.db, self.auth).require_accepted(
+            session.patient_id, consent_type="transcription"
+        )
+
+        has_audio = bool(audio_base64 and audio_base64.strip())
+        transcript = (transcript_text or "").strip()
+        if not transcript:
+            transcript = gateway.offline_transcript_stub(has_audio=has_audio)
+
+        proposal = await gateway.propose_cfp_from_transcript(
+            transcript=transcript,
+            session_notes={
+                "focus": session.focus,
+                "observations": session.observations,
+                "events": session.events,
+                "interventions": session.interventions,
+                "tasks": session.tasks,
+                "planning": session.planning,
+                "agreements": session.agreements,
+            },
+        )
+
+        structured = dict(session.structured_data or {})
+        structured["transcription"] = {
+            "text": proposal.get("transcript") or transcript,
+            "mime_type": mime_type,
+            "has_audio": has_audio,
+            "proposed_at": datetime.now(UTC).isoformat(),
+            "mode": proposal.get("mode"),
+        }
+        structured["cfp_proposal"] = {
+            "focus": proposal.get("focus"),
+            "evolution": proposal.get("evolution"),
+            "relevant_observations": proposal.get("relevant_observations"),
+            "interventions": proposal.get("interventions"),
+            "tasks": proposal.get("tasks"),
+            "planning": proposal.get("planning"),
+            "agreements": proposal.get("agreements"),
+            "mode": proposal.get("mode"),
+            "epistemology_note": proposal.get("epistemology_note"),
+            "status": "pending_review",
+            "proposed_at": datetime.now(UTC).isoformat(),
+        }
+        session.structured_data = structured
+        session.autosave_at = datetime.now(UTC)
+        session.version += 1
+
+        await write_audit(
+            self.db,
+            organization_id=self.auth.organization_id,
+            actor_user_id=self.auth.user_id,
+            action="session.transcription_proposed",
+            resource_type="session",
+            resource_id=str(session.id),
+            request_id=self.auth.request_id,
+            metadata={
+                "mode": proposal.get("mode"),
+                "has_audio": has_audio,
+                "consent_type": "transcription",
+            },
+        )
+        await self.db.commit()
+        await self.db.refresh(session)
+
+        return {
+            "session_id": str(session.id),
+            "version": session.version,
+            "proposal": structured["cfp_proposal"],
+            "transcript": structured["transcription"]["text"],
+            "applied_to_record": False,
+            "note": (
+                "Proposta revisável no modelo CFP. "
+                "Aceite humano preenche apenas o rascunho da sessão; "
+                "o prontuário oficial é criado no encerramento guiado."
+            ),
+        }
+
+    async def apply_cfp_proposal(
+        self,
+        session_id: uuid.UUID,
+        *,
+        focus: str | None = None,
+        evolution: str | None = None,
+        relevant_observations: str | None = None,
+        interventions: str | None = None,
+        tasks: str | None = None,
+        planning: str | None = None,
+        agreements: str | None = None,
+        store_transcript: bool = True,
+        expected_version: int | None = None,
+    ) -> dict:
+        """Human acceptance: map CFP proposal → session draft fields (not ClinicalRecord)."""
+        self.auth.require(Permission.SESSION_WRITE)
+        session = await self._owned_session(session_id)
+        if session.status not in {"draft", "in_progress", "pending_closure"}:
+            raise ValidationAppError("Sessão finalizada não pode receber proposta.")
+
+        if expected_version is not None and session.version != expected_version:
+            raise ConflictError(
+                "A sessão foi alterada em outro dispositivo. Recarregue antes de continuar.",
+                code="OPTIMISTIC_LOCK",
+            )
+
+        # CFP model → session draft (close maps these to ClinicalRecord)
+        if focus is not None:
+            session.focus = focus
+        if evolution is not None:
+            session.observations = evolution
+        if relevant_observations is not None:
+            session.events = relevant_observations
+        if interventions is not None:
+            session.interventions = interventions
+        if tasks is not None:
+            session.tasks = tasks
+        if planning is not None:
+            session.planning = planning
+        if agreements is not None:
+            session.agreements = agreements
+
+        structured = dict(session.structured_data or {})
+        proposal = dict(structured.get("cfp_proposal") or {})
+        proposal["status"] = "accepted"
+        proposal["accepted_at"] = datetime.now(UTC).isoformat()
+        if focus is not None:
+            proposal["focus"] = focus
+        if evolution is not None:
+            proposal["evolution"] = evolution
+        if relevant_observations is not None:
+            proposal["relevant_observations"] = relevant_observations
+        if interventions is not None:
+            proposal["interventions"] = interventions
+        if tasks is not None:
+            proposal["tasks"] = tasks
+        if planning is not None:
+            proposal["planning"] = planning
+        if agreements is not None:
+            proposal["agreements"] = agreements
+        structured["cfp_proposal"] = proposal
+        if not store_transcript:
+            structured.pop("transcription", None)
+        session.structured_data = structured
+        session.autosave_at = datetime.now(UTC)
+        session.version += 1
+
+        await write_audit(
+            self.db,
+            organization_id=self.auth.organization_id,
+            actor_user_id=self.auth.user_id,
+            action="session.cfp_proposal_accepted",
+            resource_type="session",
+            resource_id=str(session.id),
+            request_id=self.auth.request_id,
+            metadata={"applied_to_record": False},
+        )
+        await self.db.commit()
+        patient = await self.db.get(Patient, session.patient_id)
+        return {
+            **self._to_dto(session, patient),
+            "applied_to_record": False,
+            "note": "Proposta aplicada nas notas da sessão. Finalize o prontuário no encerramento.",
+        }
+
     async def prepare_context(self, patient_id: uuid.UUID) -> dict:
         """Session prep — only relevant clinical context, not ten evolutions."""
         self.auth.require(Permission.CLINICAL_RECORD_READ)

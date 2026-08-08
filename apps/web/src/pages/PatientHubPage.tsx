@@ -506,15 +506,26 @@ export default function PatientHubPage({
             <p className="text-sm text-emerald-800/70">Nenhum consentimento ainda.</p>
           )}
         </div>
-        <button
-          className="rounded-xl border px-3 py-2 text-sm"
-          onClick={async () => {
-            await requestConsent(patientId, "ai_processing");
-            await load();
-          }}
-        >
-          Solicitar consentimento de IA
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            className="rounded-xl border px-3 py-2 text-sm"
+            onClick={async () => {
+              await requestConsent(patientId, "ai_processing");
+              await load();
+            }}
+          >
+            Solicitar consentimento de IA
+          </button>
+          <button
+            className="rounded-xl border px-3 py-2 text-sm"
+            onClick={async () => {
+              await requestConsent(patientId, "transcription");
+              await load();
+            }}
+          >
+            Solicitar gravação/transcrição
+          </button>
+        </div>
       </section>
 
       <section

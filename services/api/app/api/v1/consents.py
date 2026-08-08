@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import AuthContext, get_current_auth
@@ -23,6 +23,17 @@ async def list_templates(
     else:
         items = await service.list_templates()
     return {"items": items}
+
+
+@router.get("/patients/{patient_id}/check")
+async def check_patient_consent(
+    patient_id: UUID,
+    type: str = Query(..., alias="type", min_length=2, max_length=64),
+    auth: AuthContext = Depends(get_current_auth),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Fail-closed gate for purpose-specific features (e.g. transcription)."""
+    return await ConsentService(db, auth).check(patient_id, consent_type=type)
 
 
 @router.get("/patients/{patient_id}")

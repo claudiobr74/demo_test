@@ -4,18 +4,27 @@ import {
   BrainCircuit,
   CalendarPlus,
   CheckCircle2,
+  FileCheck,
+  Mic,
+  MicOff,
   Save,
+  Sparkles,
+  X,
 } from "lucide-react";
 import ReceiptModal from "../components/ReceiptModal";
 import {
+  applySessionTranscription,
   autosaveSession,
+  checkConsent,
   closeSession,
   createAppointment,
   deferSessionClosure,
   getSession,
   prepareSessionContext,
+  proposeSessionTranscription,
   registerPayment,
   runSupervisor,
+  type CfpProposal,
   type SessionRecord,
 } from "../lib/workspace";
 
@@ -30,12 +39,20 @@ type PendingCharge = {
   patientName: string;
 };
 
+function formatRecTime(secs: number) {
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return `${m}:${s < 10 ? "0" : ""}${s}`;
+}
+
 export default function SessionPage({ sessionId, onClose }: Props) {
   const [session, setSession] = useState<SessionRecord | null>(null);
   const [tab, setTab] = useState<Tab>("notas");
   const [focus, setFocus] = useState("");
   const [observations, setObservations] = useState("");
+  const [events, setEvents] = useState("");
   const [interventions, setInterventions] = useState("");
+  const [tasks, setTasks] = useState("");
   const [agreements, setAgreements] = useState("");
   const [planning, setPlanning] = useState("");
   const [hypotheses, setHypotheses] = useState("");
@@ -57,8 +74,30 @@ export default function SessionPage({ sessionId, onClose }: Props) {
     description?: string | null;
     method: string;
   } | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [showCfpPreview, setShowCfpPreview] = useState(false);
+  const [transcriptText, setTranscriptText] = useState("");
+  const [cfpDraft, setCfpDraft] = useState<CfpProposal | null>(null);
+  const [pasteTranscript, setPasteTranscript] = useState("");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const versionRef = useRef(1);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const draftPatch = (overrides: Record<string, string> = {}) => ({
+    focus,
+    observations,
+    events,
+    interventions,
+    tasks,
+    agreements,
+    planning,
+    hypotheses,
+    ...overrides,
+  });
 
   useEffect(() => {
     void (async () => {
@@ -67,7 +106,9 @@ export default function SessionPage({ sessionId, onClose }: Props) {
         setSession(data);
         setFocus(data.focus || "");
         setObservations(data.observations || "");
+        setEvents(data.events || "");
         setInterventions(data.interventions || "");
+        setTasks(data.tasks || "");
         setAgreements(data.agreements || "");
         setPlanning(data.planning || "");
         setHypotheses(data.hypotheses || "");
@@ -80,6 +121,12 @@ export default function SessionPage({ sessionId, onClose }: Props) {
         setError(e instanceof Error ? e.message : "Erro ao abrir sessão");
       }
     })();
+    return () => {
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        mediaRecorderRef.current.stop();
+      }
+    };
   }, [sessionId]);
 
   const queueAutosave = (patch: Record<string, string>) => {
@@ -98,6 +145,165 @@ export default function SessionPage({ sessionId, onClose }: Props) {
         setSaveState("Erro");
       }
     }, 700);
+  };
+
+  const processAudio = async (audioBlob: Blob) => {
+    setIsTranscribing(true);
+    setError(null);
+    try {
+      const base64Audio = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const result = reader.result as string;
+          resolve(result.split(",")[1] || "");
+        };
+        reader.onerror = () => reject(new Error("Falha ao ler áudio"));
+        reader.readAsDataURL(audioBlob);
+      });
+      const res = await proposeSessionTranscription(sessionId, {
+        audio_base64: base64Audio,
+        mime_type: audioBlob.type || "audio/webm",
+        transcript_text: pasteTranscript.trim() || undefined,
+      });
+      versionRef.current = res.version;
+      setVersion(res.version);
+      setTranscriptText(res.transcript || "");
+      setCfpDraft(res.proposal);
+      setShowCfpPreview(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Falha ao transcrever o áudio");
+    } finally {
+      setIsTranscribing(false);
+    }
+  };
+
+  const startRecording = async () => {
+    if (!session?.patient_id) {
+      setError("Paciente não identificado para verificação de consentimento.");
+      return;
+    }
+    try {
+      const check = await checkConsent(session.patient_id, "transcription");
+      if (!check.allowed) {
+        setError(
+          `Gravação bloqueada (LGPD): consentimento de gravação/transcrição não aceito` +
+            (check.reason ? ` — ${check.reason}` : "") +
+            ". Aceite o termo no hub do paciente antes de gravar.",
+        );
+        return;
+      }
+    } catch {
+      setError(
+        "Gravação bloqueada (LGPD): falha ao consultar consentimento. Ação bloqueada por proteção.",
+      );
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunksRef.current = [];
+      setRecordingSeconds(0);
+      setIsRecording(true);
+      setError(null);
+
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) audioChunksRef.current.push(event.data);
+      };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const audioBlob = new Blob(audioChunksRef.current, {
+          type: recorder.mimeType || "audio/webm",
+        });
+        await processAudio(audioBlob);
+      };
+      recorder.start();
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingSeconds((prev) => prev + 1);
+      }, 1000);
+    } catch {
+      setError(
+        "Não foi possível acessar o microfone. Verifique a permissão no navegador.",
+      );
+      setIsRecording(false);
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+    }
+  };
+
+  const proposeFromPaste = async () => {
+    if (!session?.patient_id) return;
+    if (!pasteTranscript.trim()) {
+      setError("Cole a transcrição ou grave o áudio da sessão.");
+      return;
+    }
+    setIsTranscribing(true);
+    setError(null);
+    try {
+      const check = await checkConsent(session.patient_id, "transcription");
+      if (!check.allowed) {
+        setError(
+          "Transcrição bloqueada (LGPD): aceite o consentimento de gravação/transcrição no hub do paciente.",
+        );
+        return;
+      }
+      const res = await proposeSessionTranscription(sessionId, {
+        transcript_text: pasteTranscript.trim(),
+      });
+      versionRef.current = res.version;
+      setVersion(res.version);
+      setTranscriptText(res.transcript || pasteTranscript);
+      setCfpDraft(res.proposal);
+      setShowCfpPreview(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Falha ao gerar proposta CFP");
+    } finally {
+      setIsTranscribing(false);
+    }
+  };
+
+  const applyCfpDraft = async () => {
+    if (!cfpDraft) return;
+    setError(null);
+    try {
+      const res = await applySessionTranscription(sessionId, {
+        focus: cfpDraft.focus || "",
+        evolution: cfpDraft.evolution || "",
+        relevant_observations: cfpDraft.relevant_observations || "",
+        interventions: cfpDraft.interventions || "",
+        tasks: cfpDraft.tasks || "",
+        planning: cfpDraft.planning || "",
+        agreements: cfpDraft.agreements || "",
+        store_transcript: true,
+        version: versionRef.current,
+      });
+      setFocus(res.focus || cfpDraft.focus || "");
+      setObservations(res.observations || cfpDraft.evolution || "");
+      setEvents(res.events || cfpDraft.relevant_observations || "");
+      setInterventions(res.interventions || cfpDraft.interventions || "");
+      setTasks(res.tasks || cfpDraft.tasks || "");
+      setPlanning(res.planning || cfpDraft.planning || "");
+      setAgreements(res.agreements || cfpDraft.agreements || "");
+      versionRef.current = res.version || versionRef.current + 1;
+      setVersion(versionRef.current);
+      setSaveState("Salvo");
+      setShowCfpPreview(false);
+      setHint(
+        "Proposta CFP aplicada nas notas da sessão. O prontuário oficial só é criado no encerramento.",
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Falha ao aplicar proposta");
+    }
   };
 
   if (error && !session) {
@@ -187,85 +393,108 @@ export default function SessionPage({ sessionId, onClose }: Props) {
                 </p>
               </section>
             )}
+
+            <section className="rounded-2xl border border-emerald-200 bg-white/70 p-4">
+              <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="font-semibold text-emerald-900">
+                    Gravação e proposta CFP
+                  </h2>
+                  <p className="mt-1 text-sm text-emerald-800/75">
+                    Grava → transcreve → estrutura no modelo de prontuário do CFP.
+                    Nada entra no prontuário oficial sem o seu aceite no encerramento.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {!isRecording ? (
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-2 rounded-xl bg-emerald-800 px-3 py-2 text-sm text-white disabled:opacity-50"
+                      disabled={isTranscribing}
+                      onClick={() => void startRecording()}
+                    >
+                      <Mic size={16} /> Gravar sessão
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-2 rounded-xl bg-red-700 px-3 py-2 text-sm text-white"
+                      onClick={stopRecording}
+                    >
+                      <MicOff size={16} /> Parar {formatRecTime(recordingSeconds)}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="rounded-xl border border-emerald-200 px-3 py-2 text-sm disabled:opacity-50"
+                    disabled={isTranscribing || isRecording}
+                    onClick={() => void proposeFromPaste()}
+                  >
+                    {isTranscribing ? "Processando…" : "Gerar proposta CFP"}
+                  </button>
+                </div>
+              </div>
+              <label className="block text-sm">
+                <span className="font-medium text-emerald-900">
+                  Transcrição (opcional — cole se não gravar)
+                </span>
+                <textarea
+                  className="mt-1 w-full rounded-2xl border border-emerald-200 bg-white/80 px-3 py-2"
+                  rows={3}
+                  value={pasteTranscript}
+                  onChange={(e) => setPasteTranscript(e.target.value)}
+                  placeholder="Cole trechos da fala ou anotações brutas para estruturar no modelo CFP…"
+                />
+              </label>
+              {hint && tab === "notas" && (
+                <p className="mt-3 rounded-xl bg-emerald-100 px-3 py-2 text-sm">{hint}</p>
+              )}
+            </section>
+
             <Field
               label="Foco"
               value={focus}
               rows={2}
               onChange={(v) => {
                 setFocus(v);
-                queueAutosave({
-                  focus: v,
-                  observations,
-                  interventions,
-                  agreements,
-                  planning,
-                  hypotheses,
-                });
+                queueAutosave(draftPatch({ focus: v }));
               }}
             />
             <Field
-              label="Observações / resumo"
+              label="Evolução / observações (modelo CFP)"
               value={observations}
               rows={6}
               onChange={(v) => {
                 setObservations(v);
-                queueAutosave({
-                  focus,
-                  observations: v,
-                  interventions,
-                  agreements,
-                  planning,
-                  hypotheses,
-                });
+                queueAutosave(draftPatch({ observations: v }));
               }}
             />
             <div className="grid gap-4 md:grid-cols-2">
               <Field
-                label="Intervenções"
-                value={interventions}
-                rows={4}
-                onChange={(v) => {
-                  setInterventions(v);
-                  queueAutosave({
-                    focus,
-                    observations,
-                    interventions: v,
-                    agreements,
-                    planning,
-                    hypotheses,
-                  });
-                }}
-              />
-              <Field
-                label="Hipóteses (rascunho)"
-                value={hypotheses}
-                rows={4}
-                onChange={(v) => {
-                  setHypotheses(v);
-                  queueAutosave({
-                    focus,
-                    observations,
-                    interventions,
-                    agreements,
-                    planning,
-                    hypotheses: v,
-                  });
-                }}
-              />
-              <Field
-                label="Combinados"
-                value={agreements}
+                label="Observações relevantes"
+                value={events}
                 rows={3}
                 onChange={(v) => {
-                  setAgreements(v);
-                  queueAutosave({
-                    focus,
-                    observations,
-                    interventions,
-                    agreements: v,
-                    planning,
-                    hypotheses,
-                  });
+                  setEvents(v);
+                  queueAutosave(draftPatch({ events: v }));
+                }}
+              />
+              <Field
+                label="Intervenções"
+                value={interventions}
+                rows={3}
+                onChange={(v) => {
+                  setInterventions(v);
+                  queueAutosave(draftPatch({ interventions: v }));
+                }}
+              />
+              <Field
+                label="Tarefas terapêuticas"
+                value={tasks}
+                rows={3}
+                onChange={(v) => {
+                  setTasks(v);
+                  queueAutosave(draftPatch({ tasks: v }));
                 }}
               />
               <Field
@@ -274,14 +503,25 @@ export default function SessionPage({ sessionId, onClose }: Props) {
                 rows={3}
                 onChange={(v) => {
                   setPlanning(v);
-                  queueAutosave({
-                    focus,
-                    observations,
-                    interventions,
-                    agreements,
-                    planning: v,
-                    hypotheses,
-                  });
+                  queueAutosave(draftPatch({ planning: v }));
+                }}
+              />
+              <Field
+                label="Combinados"
+                value={agreements}
+                rows={3}
+                onChange={(v) => {
+                  setAgreements(v);
+                  queueAutosave(draftPatch({ agreements: v }));
+                }}
+              />
+              <Field
+                label="Hipóteses (rascunho da sessão)"
+                value={hypotheses}
+                rows={3}
+                onChange={(v) => {
+                  setHypotheses(v);
+                  queueAutosave(draftPatch({ hypotheses: v }));
                 }}
               />
             </div>
@@ -338,14 +578,7 @@ export default function SessionPage({ sessionId, onClose }: Props) {
                           onClick={() => {
                             const next = focus ? `${focus}\n${f}` : f;
                             setFocus(next);
-                            queueAutosave({
-                              focus: next,
-                              observations,
-                              interventions,
-                              agreements,
-                              planning,
-                              hypotheses,
-                            });
+                            queueAutosave(draftPatch({ focus: next }));
                             setHint("Foco aceito nas notas da sessão.");
                           }}
                         >
@@ -371,14 +604,7 @@ export default function SessionPage({ sessionId, onClose }: Props) {
                               ? `${planning}\n• ${q}`
                               : `• ${q}`;
                             setPlanning(next);
-                            queueAutosave({
-                              focus,
-                              observations,
-                              interventions,
-                              agreements,
-                              planning: next,
-                              hypotheses,
-                            });
+                            queueAutosave(draftPatch({ planning: next }));
                             setHint("Pergunta aceita no planejamento.");
                           }}
                         >
@@ -512,12 +738,7 @@ export default function SessionPage({ sessionId, onClose }: Props) {
                     setError(null);
                     try {
                       await autosaveSession(sessionId, {
-                        focus,
-                        observations,
-                        interventions,
-                        agreements,
-                        planning,
-                        hypotheses,
+                        ...draftPatch(),
                         version: versionRef.current,
                       });
                       const result = await closeSession(sessionId, true);
@@ -554,7 +775,133 @@ export default function SessionPage({ sessionId, onClose }: Props) {
           </section>
         )}
       </main>
+
+      {showCfpPreview && cfpDraft && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-emerald-950/60 p-4 backdrop-blur-sm">
+          <div className="max-h-[90vh] w-full max-w-4xl space-y-5 overflow-y-auto rounded-3xl border border-emerald-100 bg-white p-6 shadow-2xl md:p-8">
+            <div className="flex items-start justify-between gap-3 border-b border-emerald-50 pb-4">
+              <div className="flex items-start gap-3">
+                <div className="rounded-xl bg-emerald-100 p-2 text-emerald-800">
+                  <Sparkles size={20} />
+                </div>
+                <div>
+                  <h3 className="font-serif text-xl text-emerald-950">
+                    Evolução estruturada (modelo CFP)
+                  </h3>
+                  <p className="text-sm text-emerald-700/80">
+                    Sugestão revisável — não finaliza o prontuário. Aceite apenas preenche o
+                    rascunho da sessão.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="rounded-xl p-1.5 text-emerald-700 hover:bg-emerald-50"
+                onClick={() => setShowCfpPreview(false)}
+                aria-label="Fechar"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="grid gap-6 md:grid-cols-2">
+              <div>
+                <span className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  Transcrição
+                </span>
+                <div className="h-[360px] overflow-y-auto whitespace-pre-wrap rounded-2xl border border-slate-100 bg-slate-50/60 p-4 text-sm text-slate-700">
+                  {transcriptText || "Nenhuma fala clara identificada."}
+                </div>
+              </div>
+              <div className="space-y-3">
+                <span className="block text-[10px] font-bold uppercase tracking-wider text-emerald-700">
+                  Proposta clínica (CFP)
+                </span>
+                <CfpEdit
+                  label="Foco"
+                  value={cfpDraft.focus || ""}
+                  onChange={(v) => setCfpDraft({ ...cfpDraft, focus: v })}
+                />
+                <CfpEdit
+                  label="Evolução"
+                  value={cfpDraft.evolution || ""}
+                  rows={4}
+                  onChange={(v) => setCfpDraft({ ...cfpDraft, evolution: v })}
+                />
+                <CfpEdit
+                  label="Observações relevantes"
+                  value={cfpDraft.relevant_observations || ""}
+                  onChange={(v) =>
+                    setCfpDraft({ ...cfpDraft, relevant_observations: v })
+                  }
+                />
+                <CfpEdit
+                  label="Intervenções"
+                  value={cfpDraft.interventions || ""}
+                  onChange={(v) => setCfpDraft({ ...cfpDraft, interventions: v })}
+                />
+                <CfpEdit
+                  label="Tarefas"
+                  value={cfpDraft.tasks || ""}
+                  onChange={(v) => setCfpDraft({ ...cfpDraft, tasks: v })}
+                />
+                <CfpEdit
+                  label="Planejamento"
+                  value={cfpDraft.planning || ""}
+                  onChange={(v) => setCfpDraft({ ...cfpDraft, planning: v })}
+                />
+                <CfpEdit
+                  label="Combinados"
+                  value={cfpDraft.agreements || ""}
+                  onChange={(v) => setCfpDraft({ ...cfpDraft, agreements: v })}
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3 border-t border-emerald-50 pt-4 sm:flex-row">
+              <button
+                type="button"
+                className="flex-1 rounded-2xl border border-emerald-100 py-3 text-sm font-semibold text-emerald-800"
+                onClick={() => setShowCfpPreview(false)}
+              >
+                Descartar
+              </button>
+              <button
+                type="button"
+                className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-emerald-700 py-3 text-sm font-semibold text-white"
+                onClick={() => void applyCfpDraft()}
+              >
+                <FileCheck size={16} /> Aplicar nas notas da sessão
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+function CfpEdit({
+  label,
+  value,
+  rows = 2,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  rows?: number;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <label className="block text-sm">
+      <span className="text-[10px] font-bold uppercase text-emerald-900">{label}</span>
+      <textarea
+        className="mt-1 w-full rounded-xl border border-emerald-100 bg-emerald-50/40 px-3 py-2 text-sm"
+        rows={rows}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </label>
   );
 }
 

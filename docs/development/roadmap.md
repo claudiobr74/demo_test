@@ -48,10 +48,10 @@
 - Supervisor/Sessão: aceite de sugestões IA → memória/notas (feito)
 - Cadastro editável + gates de secretaria no hub/Meu Dia (feito)
 - Hipóteses no hub; fila de confirmações; deep-links; agenda mês; PWA SW (feito)
-- Continuar portando detalhes do `src/legacy/` (ActiveSession áudio/transcrição — P2)
+- Sessão: gravação + transcrição → proposta modelo CFP revisável (feito; fail-closed em consentimento `transcription`)
 
 ### P2/P3 restante
-- Transcrição opcional → proposta → revisão humana (não vira prontuário sozinha)
+- Providers STT reais via Serena AI Gateway (hoje: stub offline + estrutura CFP; LLM opcional)
 - Providers reais WhatsApp/SMS/email (fila já existe; sem Gmail Google)
 - PDF binário (WeasyPrint) + armazenamento de documentos
 

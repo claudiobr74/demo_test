@@ -399,6 +399,157 @@ class SerenaAIGateway:
             offline.metadata["fallback_reason"] = exc.code
             return offline
 
+    async def propose_cfp_from_transcript(
+        self,
+        *,
+        transcript: str,
+        session_notes: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Structure a transcript into CFP clinical-record fields (suggestion only)."""
+        notes = session_notes or {}
+        if not settings.ai_enabled or not (settings.openai_api_key or settings.gemini_api_key):
+            return self._offline_cfp_proposal(transcript, notes)
+
+        spec = self.registry.resolve(ModelClass.FAST)
+        try:
+            from app.ai_gateway.providers import resolve_provider
+
+            provider = resolve_provider(spec.provider)
+            if spec.provider == "openai" and not settings.openai_api_key:
+                return self._offline_cfp_proposal(transcript, notes)
+            if spec.provider == "gemini" and not settings.gemini_api_key:
+                return self._offline_cfp_proposal(transcript, notes)
+
+            system = (
+                "Você auxilia psicólogas a redigir anotações clínicas no modelo de prontuário "
+                "indicado pelo Conselho Federal de Psicologia (CFP). "
+                "Responda APENAS JSON válido com as chaves: "
+                "focus, evolution, relevant_observations, interventions, tasks, planning, agreements. "
+                "Nunca invente fatos clínicos. Se a transcrição for insuficiente, deixe o campo "
+                "com orientação curta para a profissional completar. "
+                "Não copie a transcrição bruta para evolution — sintetize em linguagem clínica. "
+                "A proposta é sugestão; a profissional revisa e decide."
+            )
+            user = json.dumps(
+                {
+                    "transcript": transcript[:20_000],
+                    "existing_notes": self.privacy.minimize(notes),
+                },
+                ensure_ascii=False,
+            )
+            completion = await provider.complete(
+                system=system, user=user, model=spec.model, temperature=0.2
+            )
+            content = completion.get("content") or {}
+            proposal = self._normalize_cfp_proposal(content, transcript)
+            proposal["mode"] = "llm"
+            proposal["metadata"] = {
+                "engine_version": ENGINE_VERSION,
+                "provider": spec.provider,
+                "model": spec.model,
+                "input_tokens": completion.get("input_tokens", 0),
+                "output_tokens": completion.get("output_tokens", 0),
+            }
+            return proposal
+        except Exception as exc:  # noqa: BLE001 — always fall back offline
+            logger.warning("cfp_propose_fallback", error=type(exc).__name__)
+            proposal = self._offline_cfp_proposal(transcript, notes)
+            proposal["metadata"]["fallback_reason"] = type(exc).__name__
+            return proposal
+
+    def _offline_cfp_proposal(
+        self, transcript: str, notes: dict[str, Any]
+    ) -> dict[str, Any]:
+        text = (transcript or "").strip()
+        focus = (notes.get("focus") or "").strip()
+        if not focus and text:
+            first_line = text.splitlines()[0].strip()
+            focus = first_line[:180] if first_line else "Revisar foco da sessão com a paciente"
+        if not focus:
+            focus = "Definir foco clínico da sessão (revisão humana)"
+
+        evolution = (notes.get("observations") or "").strip()
+        if not evolution:
+            if text and not text.startswith("[Transcrição offline]"):
+                snippet = text[:600].strip()
+                evolution = (
+                    "Proposta assistiva (modo offline) — revise antes de aceitar:\n"
+                    f"{snippet}"
+                    + ("…" if len(text) > 600 else "")
+                )
+            else:
+                evolution = (
+                    "Complete a evolução clínica no modelo CFP após revisar a sessão. "
+                    "Nada entra no prontuário oficial sem o seu aceite no encerramento."
+                )
+
+        return {
+            "transcript": text,
+            "focus": focus,
+            "evolution": evolution,
+            "relevant_observations": (notes.get("events") or "").strip()
+            or "Registrar observações relevantes da sessão (revisão humana).",
+            "interventions": (notes.get("interventions") or "").strip()
+            or "Descrever intervenções realizadas (revisão humana).",
+            "tasks": (notes.get("tasks") or "").strip()
+            or "Listar tarefas terapêuticas combinadas, se houver.",
+            "planning": (notes.get("planning") or "").strip()
+            or "Planejar próximo foco / continuidade do cuidado.",
+            "agreements": (notes.get("agreements") or "").strip()
+            or "Registrar combinados com a paciente, se houver.",
+            "mode": "offline_assist",
+            "epistemology_note": (
+                "Sugestão estruturada no modelo CFP. Não é prontuário finalizado. "
+                "A profissional revisa, edita e só então aplica nas notas da sessão."
+            ),
+            "metadata": {
+                "engine_version": ENGINE_VERSION,
+                "provider": "none",
+                "model": "offline_cfp",
+                "prompt_policy_version": "cfp-offline-1",
+            },
+        }
+
+    def _normalize_cfp_proposal(self, content: dict[str, Any], transcript: str) -> dict[str, Any]:
+        def _s(key: str, *alts: str) -> str:
+            for k in (key, *alts):
+                v = content.get(k)
+                if isinstance(v, str) and v.strip():
+                    return v.strip()
+            return ""
+
+        return {
+            "transcript": transcript,
+            "focus": _s("focus", "foco") or "Revisar foco da sessão",
+            "evolution": _s("evolution", "evolucao", "evolução")
+            or "Complete a evolução clínica (modelo CFP).",
+            "relevant_observations": _s(
+                "relevant_observations", "observacoes", "observações"
+            )
+            or "Registrar observações relevantes.",
+            "interventions": _s("interventions", "intervencoes", "intervenções")
+            or "Descrever intervenções.",
+            "tasks": _s("tasks", "tarefas") or "Listar tarefas, se houver.",
+            "planning": _s("planning", "planejamento") or "Planejar continuidade.",
+            "agreements": _s("agreements", "combinados") or "Registrar combinados.",
+            "epistemology_note": (
+                "Sugestão estruturada no modelo CFP. Não é prontuário finalizado. "
+                "A profissional revisa e decide."
+            ),
+        }
+
+    def offline_transcript_stub(self, *, has_audio: bool) -> str:
+        if has_audio:
+            return (
+                "[Transcrição offline] Áudio recebido. A STT automática está indisponível "
+                "(IA desabilitada ou sem chave de provedor). Use o texto abaixo como base "
+                "e complete os campos do modelo CFP com base na sessão."
+            )
+        return (
+            "[Transcrição offline] Nenhum texto de fala foi enviado. "
+            "Cole a transcrição ou grave com IA habilitada para obter STT automática."
+        )
+
     def _offline_assist(
         self,
         mode: SupervisorMode,
