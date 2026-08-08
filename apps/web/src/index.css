@@ -1,0 +1,69 @@
+/* Fontes via Bunny (sem Google Fonts) */
+@import url("https://fonts.bunny.net/css?family=dm-sans:400,500,600,700|fraunces:500,600,700");
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Fraunces", Georgia, Cambria, "Times New Roman", Times, serif;
+
+  /* Sage / emerald SerenaPsi (modelo React) */
+  --color-emerald-50: #faf9f6;
+  --color-emerald-100: #e8e4df;
+  --color-emerald-200: #dcd8d3;
+  --color-emerald-300: #b7b7a4;
+  --color-emerald-400: #a5a58d;
+  --color-emerald-500: #8b8b88;
+  --color-emerald-600: #7a7f6b;
+  --color-emerald-700: #737864;
+  --color-emerald-800: #6b705c;
+  --color-emerald-900: #4a4a48;
+  --color-emerald-950: #3d3d3c;
+
+  --color-slate-50: #faf9f6;
+  --color-slate-100: #e8e4df;
+  --color-slate-200: #dcd8d3;
+
+  --color-gray-50: #faf9f6;
+  --color-gray-100: #e8e4df;
+  --color-gray-200: #dcd8d3;
+  --color-gray-900: #3d3d3c;
+
+  --color-amber-50: #fff9f2;
+  --color-amber-100: #fdebd0;
+  --color-amber-800: #d4a373;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: #b7b7a4;
+  border-radius: 999px;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font-sans);
+  color: #3d3d3c;
+  background:
+    radial-gradient(1200px 600px at 10% -10%, #e8efe8 0%, transparent 55%),
+    radial-gradient(900px 500px at 100% 0%, #f3ebe0 0%, transparent 50%),
+    #faf9f6;
+}

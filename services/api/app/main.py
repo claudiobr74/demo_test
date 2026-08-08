@@ -1,5 +1,6 @@
-"""SerenaPsi API — application entrypoint (+ Flutter web em desenvolvimento)."""
+"""SerenaPsi API — application entrypoint (+ web estático React ou Flutter)."""
 
+import os
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -22,7 +23,20 @@ logger = get_logger(__name__)
 
 # services/api/app/main.py → /workspace
 _WORKSPACE_ROOT = Path(__file__).resolve().parents[3]
-_WEB_DIR = _WORKSPACE_ROOT / "apps" / "mobile" / "build" / "web"
+
+
+def _resolve_web_dir() -> Path:
+    """Preferência: SERENA_WEB_DIR → React dist → Flutter build/web."""
+    override = os.environ.get("SERENA_WEB_DIR")
+    if override:
+        return Path(override)
+    react = _WORKSPACE_ROOT / "apps" / "web" / "dist"
+    if react.is_dir() and (react / "index.html").exists():
+        return react
+    return _WORKSPACE_ROOT / "apps" / "mobile" / "build" / "web"
+
+
+_WEB_DIR = _resolve_web_dir()
 
 
 @asynccontextmanager
@@ -96,6 +110,6 @@ async def health(request: Request) -> dict[str, str]:
     }
 
 
-# App Flutter (build/web) na mesma origem da API — abre só a porta 8000.
+# Frontend estático (React apps/web ou Flutter) na mesma origem da API.
 if _WEB_DIR.is_dir():
     app.mount("/", StaticFiles(directory=str(_WEB_DIR), html=True), name="web")

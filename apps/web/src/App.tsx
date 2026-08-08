@@ -1,0 +1,170 @@
+import { Suspense, lazy, useMemo, useState } from "react";
+import { motion } from "motion/react";
+import {
+  canAccessClinical,
+  getAccessToken,
+  getStoredUser,
+  loginWithPassword,
+  logoutFromApp,
+  mapRoleLabel,
+  type SerenaUser,
+} from "./lib/auth";
+import { setupAppWorkspace } from "./lib/workspace";
+import Sidebar, { type TabId } from "./components/Sidebar";
+import { FullLogo } from "./components/Logo";
+
+const MyDayPage = lazy(() => import("./pages/MyDayPage"));
+const PatientsPage = lazy(() => import("./pages/PatientsPage"));
+const AgendaPage = lazy(() => import("./pages/AgendaPage"));
+const FinancePage = lazy(() => import("./pages/FinancePage"));
+const DocumentsPage = lazy(() => import("./pages/DocumentsPage"));
+const SupervisorPage = lazy(() => import("./pages/SupervisorPage"));
+const KnowledgePage = lazy(() => import("./pages/KnowledgePage"));
+const AiUsagePage = lazy(() => import("./pages/AiUsagePage"));
+const SettingsPage = lazy(() => import("./pages/SettingsPage"));
+const SessionPage = lazy(() => import("./pages/SessionPage"));
+
+export default function App() {
+  const initialUser = getStoredUser();
+  const hasToken = Boolean(getAccessToken());
+  const [user, setUser] = useState<SerenaUser | null>(hasToken ? initialUser : null);
+  const [tab, setTab] = useState<TabId>("meudia");
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [email, setEmail] = useState("dra.marina@serenapsi.dev");
+  const [password, setPassword] = useState("SerenaPsi!dev1");
+  const [keepSignedIn, setKeepSignedIn] = useState(true);
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [loggingIn, setLoggingIn] = useState(false);
+
+  const clinicalAccess = useMemo(
+    () => (user ? canAccessClinical(user.role_key, user.permissions) : false),
+    [user],
+  );
+
+  if (!user) {
+    return (
+      <div className="flex min-h-screen items-center justify-center px-4">
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="w-full max-w-md rounded-3xl border border-emerald-200 bg-white/80 p-8 shadow-lg"
+        >
+          <FullLogo />
+          <h1 className="mt-4 text-center font-serif text-2xl text-emerald-950">Entrar no consultório</h1>
+          <p className="mt-2 text-center text-sm text-emerald-800/75">
+            Autenticação própria SerenaPsi — sem Google Login.
+          </p>
+          <form
+            className="mt-6 space-y-3"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setLoggingIn(true);
+              setLoginError(null);
+              try {
+                const result = await loginWithPassword(email.trim(), password, keepSignedIn);
+                await setupAppWorkspace();
+                setUser(result.user);
+              } catch (err) {
+                setLoginError(err instanceof Error ? err.message : "Falha no login");
+              } finally {
+                setLoggingIn(false);
+              }
+            }}
+          >
+            <label className="block text-sm">
+              E-mail
+              <input
+                className="mt-1 w-full rounded-xl border px-3 py-2"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="username"
+              />
+            </label>
+            <label className="block text-sm">
+              Senha
+              <input
+                className="mt-1 w-full rounded-xl border px-3 py-2"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+              />
+            </label>
+            <label className="flex items-center gap-2 text-sm text-emerald-900">
+              <input
+                type="checkbox"
+                checked={keepSignedIn}
+                onChange={(e) => setKeepSignedIn(e.target.checked)}
+              />
+              Manter conectada neste dispositivo
+            </label>
+            {loginError && <p className="text-sm text-red-700">{loginError}</p>}
+            <button
+              type="submit"
+              disabled={loggingIn}
+              className="w-full rounded-xl bg-emerald-800 py-2.5 text-white disabled:opacity-60"
+            >
+              {loggingIn ? "Entrando…" : "Entrar"}
+            </button>
+          </form>
+        </motion.div>
+      </div>
+    );
+  }
+
+  if (sessionId) {
+    return (
+      <Suspense fallback={<p className="p-8">Carregando sessão…</p>}>
+        <SessionPage sessionId={sessionId} onClose={() => setSessionId(null)} />
+      </Suspense>
+    );
+  }
+
+  const content = (() => {
+    switch (tab) {
+      case "meudia":
+        return <MyDayPage onOpenSession={setSessionId} />;
+      case "pacientes":
+        return <PatientsPage />;
+      case "agenda":
+        return <AgendaPage />;
+      case "financeiro":
+        return <FinancePage />;
+      case "documentos":
+        return <DocumentsPage />;
+      case "supervisor":
+        return clinicalAccess ? <SupervisorPage /> : <p>Acesso clínico necessário.</p>;
+      case "conhecimento":
+        return clinicalAccess ? <KnowledgePage /> : <p>Acesso clínico necessário.</p>;
+      case "ia":
+        return clinicalAccess ? <AiUsagePage /> : <p>Acesso clínico necessário.</p>;
+      case "configuracoes":
+        return <SettingsPage user={user} />;
+      default:
+        return null;
+    }
+  })();
+
+  return (
+    <div className="min-h-screen md:pl-64">
+      <Sidebar
+        currentTab={tab}
+        setCurrentTab={setTab}
+        userName={user.full_name}
+        roleLabel={mapRoleLabel(user.role_key)}
+        onLogout={async () => {
+          await logoutFromApp();
+          setUser(null);
+        }}
+        isMobileOpen={mobileOpen}
+        setIsMobileOpen={setMobileOpen}
+        clinicalAccess={clinicalAccess}
+      />
+      <main className="px-4 py-6 md:px-8 md:py-8">
+        <Suspense fallback={<p className="text-emerald-800/70">Carregando…</p>}>{content}</Suspense>
+      </main>
+    </div>
+  );
+}

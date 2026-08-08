@@ -31,15 +31,23 @@
 - Deep-links de proveniência → sessão / prontuário / formulação
 - Agenda: DnD na semana, conflitos visuais, snap de 15 min
 
-## Próximo (pelo prompt inicial)
+- Frontend React (`apps/web`) a partir do modelo de consultório — **sem Google/Firebase**
+- Auth JWT + adapter API; NotebookLM → módulo Conhecimento; legacy em `src/legacy/`
+
+## Próximo (pelo prompt inicial + modelo React)
+
+### Web React
+- Portar telas rich do `src/legacy/` (ActiveSession, Finance detalhado, Documents templates) para pages API
+- Fechamento de sessão / recibos / pacotes no React
+- PWA install flow do modelo (já no Sidebar legado)
 
 ### P2/P3 restante
 - Transcrição opcional → proposta → revisão humana (não vira prontuário sozinha)
-- Providers reais WhatsApp/SMS/email (fila já existe)
+- Providers reais WhatsApp/SMS/email (fila já existe; sem Gmail Google)
 - PDF binário (WeasyPrint) + armazenamento de documentos
 
 ### P4
-- Knowledge / estudo (cadernos + biblioteca clínica)
+- Cadernos / biblioteca clínica (Knowledge)
 - RAG + motor longitudinal avançado
 
 ### P5

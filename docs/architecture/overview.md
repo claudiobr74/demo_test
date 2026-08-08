@@ -7,23 +7,27 @@ O SerenaPsi é o **Sistema Operacional Clínico da Psicóloga**: organiza o cons
 ## Diagrama lógico
 
 ```
-Flutter (iOS / Android / Web / Desktop)
-        │
-   Secure API /api/v1
-        │
-┌───────┴────────────────────────────┐
-│ Auth · Tenant Isolation · RBAC     │
-│ Clinical Domain · Appointments     │
-│ Finance · Documents · Notifications│
+React Web (apps/web)     Flutter (iOS / Android / Web)
+        │                         │
+        └──────────┬──────────────┘
+                   │
+            Secure API /api/v1
+                   │
+┌──────────────────┴─────────────────┐
+│ Auth JWT · Tenant Isolation · RBAC │
+│ Clinical · Agenda · Finance · Docs │
 └───────┬──────────────┬─────────────┘
         │              │
-   PostgreSQL     Object Storage
+   PostgreSQL     Object Storage (futuro)
         │
  Clinical Case Memory
         │
  Serena AI Gateway (multi-provider)
         │
  Professional Review (human-in-the-loop)
+
+Sem Google Workspace: autenticação, agenda, docs e backup
+não dependem de Drive/Sheets/Calendar/Gmail/Firebase.
 ```
 
 ## Camadas

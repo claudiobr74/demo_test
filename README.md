@@ -9,6 +9,7 @@ O SerenaPsi reduz carga administrativa e cognitiva para que a psicóloga concent
 ## Monorepo
 
 ```
+apps/web/             React + Vite (web principal, sem Google Workspace)
 apps/mobile/          Flutter (iOS, Android, Web)
 services/api/         SerenaPsi API (FastAPI + PostgreSQL)
 docs/                 Arquitetura, segurança, IA, ADRs
@@ -19,12 +20,15 @@ scripts/              Utilitários de desenvolvimento
 
 | Camada | Tecnologia |
 |--------|------------|
-| App | Flutter 3.32+ |
+| Web | React 19 + Vite + Tailwind (tema esmeralda) |
+| App nativo | Flutter 3.32+ |
 | API | FastAPI, SQLAlchemy 2 (async), Pydantic v2 |
 | Banco | PostgreSQL 16 |
-| Auth | JWT + RBAC contextual |
-| IA | Serena AI Gateway (multi-provider) |
-| Infra alvo | Google Cloud Run, Cloud SQL, Secret Manager |
+| Auth | JWT + RBAC contextual (sem Firebase/Google OAuth) |
+| IA | Serena AI Gateway (multi-provider; funciona offline) |
+| Infra alvo | Cloud Run / VPS + PostgreSQL + Secret Manager |
+
+**Diferencial:** sem Google Drive, Sheets, Docs, Calendar, Gmail, Meet nem NotebookLM.
 
 ## Início rápido
 
@@ -33,14 +37,21 @@ Consulte [docs/setup/local.md](docs/setup/local.md).
 ```bash
 # API
 cd services/api
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
+poetry install
 cp .env.example .env
-alembic upgrade head
-python -m app.scripts.seed
-uvicorn app.main:app --reload --port 8000
+poetry run alembic upgrade head
+poetry run python -m app.scripts.seed
+poetry run uvicorn app.main:app --reload --port 8000
 
-# Flutter
+# Web React (proxy /api → :8000)
+cd apps/web
+npm install
+npm run dev
+
+# Ou API + build React na mesma porta
+./scripts/start_web.sh
+
+# Flutter (opcional / multiplataforma)
 cd apps/mobile
 flutter pub get
 flutter run -d chrome
