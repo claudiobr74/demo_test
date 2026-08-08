@@ -538,6 +538,72 @@ class SerenaAIGateway:
             ),
         }
 
+    async def transcribe_audio(
+        self,
+        *,
+        audio_base64: str,
+        mime_type: str | None = None,
+        language: str = "pt",
+    ) -> dict[str, Any]:
+        """Speech-to-text via configured provider — offline stub when AI is unavailable."""
+        import base64
+
+        mime = (mime_type or "audio/webm").split(";")[0].strip() or "audio/webm"
+        offline = {
+            "text": self.offline_transcript_stub(has_audio=True),
+            "mode": "offline_assist",
+            "provider": "none",
+            "model": "offline_stt",
+            "language": language,
+        }
+
+        if not settings.ai_enabled:
+            return {**offline, "fallback_reason": "AI_DISABLED"}
+
+        stt_value = settings.ai_stt_model or f"{settings.ai_default_provider}:whisper-1"
+        if ":" in stt_value:
+            provider_name, model = stt_value.split(":", 1)
+        else:
+            provider_name, model = settings.ai_default_provider, stt_value
+        provider_name = (provider_name or "openai").lower()
+
+        if provider_name == "openai" and not settings.openai_api_key:
+            return {**offline, "fallback_reason": "AI_PROVIDER_NOT_CONFIGURED"}
+        if provider_name == "gemini" and not settings.gemini_api_key:
+            return {**offline, "fallback_reason": "AI_PROVIDER_NOT_CONFIGURED"}
+
+        try:
+            audio_bytes = base64.b64decode(audio_base64, validate=False)
+        except Exception:  # noqa: BLE001
+            return {**offline, "fallback_reason": "INVALID_AUDIO"}
+
+        if len(audio_bytes) < 32:
+            return {**offline, "fallback_reason": "AUDIO_TOO_SMALL"}
+
+        try:
+            from app.ai_gateway.providers import resolve_provider
+
+            provider = resolve_provider(provider_name)
+            result = await provider.transcribe(
+                audio_bytes=audio_bytes,
+                mime_type=mime,
+                model=model,
+                language=language,
+            )
+            return {
+                "text": result["text"],
+                "mode": "stt",
+                "provider": result.get("provider") or provider_name,
+                "model": result.get("model") or model,
+                "language": language,
+            }
+        except AppError as exc:
+            logger.warning("stt_fallback", code=exc.code)
+            return {**offline, "fallback_reason": exc.code}
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("stt_fallback", error=type(exc).__name__)
+            return {**offline, "fallback_reason": type(exc).__name__}
+
     def offline_transcript_stub(self, *, has_audio: bool) -> str:
         if has_audio:
             return (

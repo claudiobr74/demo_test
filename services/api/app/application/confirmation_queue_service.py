@@ -119,6 +119,79 @@ class ConfirmationQueueService:
                     "delivery": payload.get("delivery"),
                     "created_at": n.created_at.isoformat() if n.created_at else None,
                     "read_at": n.read_at.isoformat() if n.read_at else None,
+                    "copied_at": payload.get("copied_at"),
+                    "sent_at": payload.get("sent_at"),
                 }
             )
         return items
+
+    async def mark_status(self, notification_id: uuid.UUID, *, status: str) -> dict:
+        """Ops workflow for real clinic use: copied → sent (providers plug later)."""
+        self.auth.require(Permission.APPOINTMENT_WRITE)
+        if status not in {"copied", "sent", "dismissed"}:
+            raise ValidationAppError("Status inválido. Use copied, sent ou dismissed.")
+
+        note = await self.db.get(Notification, notification_id)
+        if (
+            note is None
+            or note.organization_id != self.auth.organization_id
+            or note.user_id != self.auth.user_id
+        ):
+            raise NotFoundError("Item da fila não encontrado.")
+
+        payload = dict(note.payload or {})
+        if payload.get("kind") != "appointment_confirmation":
+            raise ValidationAppError("Notificação não é uma confirmação de atendimento.")
+
+        now = datetime.now(UTC)
+        payload["status"] = status
+        if status == "copied":
+            payload["copied_at"] = now.isoformat()
+            payload["delivery"] = payload.get("delivery") or "manual_copy"
+        elif status == "sent":
+            payload["sent_at"] = now.isoformat()
+            payload["delivery"] = "manual_sent"
+            note.read_at = now
+        elif status == "dismissed":
+            payload["dismissed_at"] = now.isoformat()
+            note.read_at = now
+
+        note.payload = payload
+
+        appt_id = payload.get("appointment_id")
+        if appt_id:
+            try:
+                appt = await self.db.get(Appointment, uuid.UUID(str(appt_id)))
+            except ValueError:
+                appt = None
+            if appt and appt.organization_id == self.auth.organization_id:
+                if status == "copied":
+                    appt.confirmation_status = "awaiting_confirmation"
+                elif status == "sent":
+                    appt.confirmation_status = "sent"
+                elif status == "dismissed":
+                    appt.confirmation_status = "pending"
+
+        await write_audit(
+            self.db,
+            organization_id=self.auth.organization_id,
+            actor_user_id=self.auth.user_id,
+            action=f"confirmation.{status}",
+            resource_type="notification",
+            resource_id=str(note.id),
+            request_id=self.auth.request_id,
+            metadata={"appointment_id": appt_id, "channel": note.channel},
+        )
+        await self.db.commit()
+        await self.db.refresh(note)
+        payload = note.payload or {}
+        return {
+            "id": str(note.id),
+            "status": payload.get("status"),
+            "appointment_id": payload.get("appointment_id"),
+            "channel": note.channel,
+            "delivery": payload.get("delivery"),
+            "copied_at": payload.get("copied_at"),
+            "sent_at": payload.get("sent_at"),
+            "read_at": note.read_at.isoformat() if note.read_at else None,
+        }

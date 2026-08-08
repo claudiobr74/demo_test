@@ -1,6 +1,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import AuthContext, get_current_auth
@@ -73,11 +74,21 @@ async def finalize_document(
     return await DocumentService(db, auth).finalize(document_id)
 
 
-@router.get("/{document_id}/export")
+@router.get("/{document_id}/export", response_model=None)
 async def export_document(
     document_id: UUID,
     format: str = Query("html", alias="format"),
+    download: bool = Query(False),
     auth: AuthContext = Depends(get_current_auth),
     db: AsyncSession = Depends(get_db),
-) -> dict:
-    return await DocumentService(db, auth).export_payload(document_id, fmt=format)
+):
+    payload = await DocumentService(db, auth).export_payload(document_id, fmt=format)
+    raw = payload.pop("content_bytes", None)
+    if download and raw is not None:
+        filename = payload.get("filename") or "documento.pdf"
+        return Response(
+            content=raw,
+            media_type=payload.get("media_type") or "application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    return payload

@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     ai_fast_model: str = "openai:gpt-4o-mini"
     ai_reasoning_model: str = "openai:gpt-4o"
     ai_deep_reasoning_model: str = "openai:o1"
+    ai_stt_model: str = "openai:whisper-1"
     ai_default_provider: str = "openai"
     openai_api_key: str = ""
     gemini_api_key: str = ""

@@ -13,6 +13,23 @@ from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
+_MIME_TO_EXT = {
+    "audio/webm": "webm",
+    "audio/mp4": "mp4",
+    "audio/mpeg": "mp3",
+    "audio/mp3": "mp3",
+    "audio/wav": "wav",
+    "audio/x-wav": "wav",
+    "audio/ogg": "ogg",
+    "audio/flac": "flac",
+    "video/webm": "webm",
+}
+
+
+def _audio_filename(mime_type: str) -> str:
+    ext = _MIME_TO_EXT.get((mime_type or "").split(";")[0].strip().lower(), "webm")
+    return f"session.{ext}"
+
 
 class OpenAIProvider:
     async def complete(
@@ -78,6 +95,66 @@ class OpenAIProvider:
             "output_tokens": usage.get("completion_tokens", 0),
             "provider": "openai",
             "model": model,
+        }
+
+    async def transcribe(
+        self,
+        *,
+        audio_bytes: bytes,
+        mime_type: str,
+        model: str = "whisper-1",
+        language: str = "pt",
+    ) -> dict[str, Any]:
+        if not settings.openai_api_key:
+            raise AppError(
+                "AI_PROVIDER_NOT_CONFIGURED",
+                "Chave OpenAI não configurada.",
+                status_code=503,
+            )
+        model_name = model.split(":", 1)[-1] if ":" in model else model
+        filename = _audio_filename(mime_type)
+        content_type = (mime_type or "audio/webm").split(";")[0].strip() or "audio/webm"
+        try:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                resp = await client.post(
+                    "https://api.openai.com/v1/audio/transcriptions",
+                    headers={"Authorization": f"Bearer {settings.openai_api_key}"},
+                    files={"file": (filename, audio_bytes, content_type)},
+                    data={
+                        "model": model_name,
+                        "language": language,
+                        "response_format": "json",
+                    },
+                )
+        except httpx.HTTPError as exc:
+            logger.warning("openai_stt_http_error", error=type(exc).__name__)
+            raise AppError(
+                "AI_PROVIDER_UNAVAILABLE",
+                "STT indisponível. Usando modo assistivo local.",
+                status_code=503,
+            ) from exc
+
+        if resp.status_code >= 400:
+            logger.warning("openai_stt_bad_status", status=resp.status_code)
+            raise AppError(
+                "AI_PROVIDER_ERROR",
+                "Falha no STT. Usando modo assistivo local.",
+                status_code=503,
+            )
+
+        data = resp.json()
+        text = (data.get("text") or "").strip()
+        if not text:
+            raise AppError(
+                "AI_PROVIDER_ERROR",
+                "STT não retornou texto utilizável.",
+                status_code=503,
+            )
+        return {
+            "text": text,
+            "provider": "openai",
+            "model": model_name,
+            "language": language,
         }
 
 
@@ -150,6 +227,104 @@ class GeminiProvider:
             "output_tokens": usage.get("candidatesTokenCount", 0),
             "provider": "gemini",
             "model": model_name,
+        }
+
+    async def transcribe(
+        self,
+        *,
+        audio_bytes: bytes,
+        mime_type: str,
+        model: str = "gemini-2.0-flash",
+        language: str = "pt",
+    ) -> dict[str, Any]:
+        """Gemini multimodal STT — transcription via generateContent with inline audio."""
+        if not settings.gemini_api_key:
+            raise AppError(
+                "AI_PROVIDER_NOT_CONFIGURED",
+                "Chave Gemini não configurada.",
+                status_code=503,
+            )
+        import base64
+
+        model_name = model.split(":", 1)[-1] if model.startswith("gemini:") else model
+        if model_name.startswith("whisper"):
+            # Misconfigured STT model for Gemini provider — use a multimodal default.
+            model_name = "gemini-2.0-flash"
+        content_type = (mime_type or "audio/webm").split(";")[0].strip() or "audio/webm"
+        url = (
+            f"https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{model_name}:generateContent?key={settings.gemini_api_key}"
+        )
+        payload = {
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [
+                        {
+                            "inline_data": {
+                                "mime_type": content_type,
+                                "data": base64.b64encode(audio_bytes).decode("ascii"),
+                            }
+                        },
+                        {
+                            "text": (
+                                "Transcreva o áudio em português brasileiro. "
+                                "Responda APENAS JSON válido: {\"text\": \"...\"}. "
+                                "Não invente falas; se inaudível, use texto vazio."
+                            )
+                        },
+                    ],
+                }
+            ],
+            "generationConfig": {
+                "temperature": 0.1,
+                "responseMimeType": "application/json",
+            },
+        }
+        try:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                resp = await client.post(url, json=payload)
+        except httpx.HTTPError as exc:
+            logger.warning("gemini_stt_http_error", error=type(exc).__name__)
+            raise AppError(
+                "AI_PROVIDER_UNAVAILABLE",
+                "STT indisponível. Usando modo assistivo local.",
+                status_code=503,
+            ) from exc
+
+        if resp.status_code >= 400:
+            logger.warning("gemini_stt_bad_status", status=resp.status_code)
+            raise AppError(
+                "AI_PROVIDER_ERROR",
+                "Falha no STT. Usando modo assistivo local.",
+                status_code=503,
+            )
+
+        data = resp.json()
+        try:
+            content = data["candidates"][0]["content"]["parts"][0]["text"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise AppError(
+                "AI_PROVIDER_ERROR",
+                "Resposta Gemini STT inválida.",
+                status_code=503,
+            ) from exc
+        try:
+            parsed = json.loads(content)
+            text = (parsed.get("text") or "").strip()
+        except json.JSONDecodeError:
+            text = content.strip()
+        if not text:
+            raise AppError(
+                "AI_PROVIDER_ERROR",
+                "STT não retornou texto utilizável.",
+                status_code=503,
+            )
+        return {
+            "text": text,
+            "provider": "gemini",
+            "model": model_name,
+            "language": language,
         }
 
 

@@ -1,9 +1,11 @@
-"""Clinical/admin documents — templates and drafts (no external storage yet)."""
+"""Clinical/admin documents — templates, drafts, and local PDF export."""
 
 from __future__ import annotations
 
+import base64
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +16,8 @@ from app.core.errors import NotFoundError, ValidationAppError
 from app.core.permissions import Permission
 from app.infrastructure.db.models_clinical import Patient
 from app.infrastructure.db.models_ops import Document, DocumentTemplate
+
+STORAGE_ROOT = Path(__file__).resolve().parents[2] / "storage" / "documents"
 
 DEFAULT_TEMPLATES = [
     (
@@ -215,7 +219,7 @@ class DocumentService:
         return self._doc_dto(doc)
 
     async def export_payload(self, document_id: uuid.UUID, *, fmt: str = "html") -> dict:
-        """Export printable artifact — HTML/text now; PDF binary storage later."""
+        """Export TXT/HTML (print-ready) or binary PDF stored locally under object_key."""
         self.auth.require(Permission.DOCUMENT_READ)
         doc = await self._owned_doc(document_id)
         fmt = (fmt or "html").lower()
@@ -229,6 +233,11 @@ class DocumentService:
                 patient_name = patient.display_name
 
         generated_at = datetime.now(UTC).astimezone().strftime("%d/%m/%Y %H:%M")
+        encoding = None
+        object_key = None
+        print_hint = None
+        content_bytes: bytes | None = None
+
         if fmt == "txt":
             content = (
                 f"{doc.title}\n"
@@ -240,8 +249,7 @@ class DocumentService:
             )
             filename = f"{_slug(doc.title)}.txt"
             media_type = "text/plain; charset=utf-8"
-        else:
-            # html and pdf (print-ready HTML — browser/print-to-PDF)
+        elif fmt == "html":
             escaped_body = (
                 doc.body.replace("&", "&amp;")
                 .replace("<", "&lt;")
@@ -275,6 +283,26 @@ class DocumentService:
 """
             filename = f"{_slug(doc.title)}.html"
             media_type = "text/html; charset=utf-8"
+            print_hint = "Abra o HTML e use Imprimir → Salvar como PDF, ou exporte PDF binário."
+        else:
+            content_bytes = _render_pdf_bytes(
+                title=doc.title,
+                body=doc.body or "",
+                patient_name=patient_name or "—",
+                status=doc.status,
+                generated_at=generated_at,
+            )
+            filename = f"{_slug(doc.title)}.pdf"
+            media_type = "application/pdf"
+            encoding = "base64"
+            content = base64.b64encode(content_bytes).decode("ascii")
+            object_key = (
+                f"org/{self.auth.organization_id}/documents/{doc.id}/{filename}"
+            )
+            path = STORAGE_ROOT / str(self.auth.organization_id) / str(doc.id)
+            path.mkdir(parents=True, exist_ok=True)
+            (path / filename).write_bytes(content_bytes)
+            doc.object_key = object_key
 
         await write_audit(
             self.db,
@@ -284,17 +312,22 @@ class DocumentService:
             resource_type="document",
             resource_id=str(doc.id),
             request_id=self.auth.request_id,
-            metadata={"format": fmt},
+            metadata={"format": fmt, "object_key": object_key},
         )
         await self.db.commit()
-        return {
+        result = {
             "document_id": str(doc.id),
-            "format": "html" if fmt == "pdf" else fmt,
+            "format": fmt,
             "filename": filename,
             "media_type": media_type,
             "content": content,
-            "print_hint": "Abra o HTML e use Imprimir → Salvar como PDF." if fmt in {"html", "pdf"} else None,
+            "encoding": encoding,
+            "object_key": object_key,
+            "print_hint": print_hint,
         }
+        if content_bytes is not None:
+            result["content_bytes"] = content_bytes
+        return result
 
     async def _owned_patient(self, patient_id: uuid.UUID) -> Patient:
         patient = await self.db.get(Patient, patient_id)
@@ -347,3 +380,84 @@ def _slug(title: str) -> str:
     while "--" in cleaned:
         cleaned = cleaned.replace("--", "-")
     return (cleaned.strip("-") or "documento")[:80]
+
+
+def _render_pdf_bytes(
+    *,
+    title: str,
+    body: str,
+    patient_name: str,
+    status: str,
+    generated_at: str,
+) -> bytes:
+    """Lightweight binary PDF (fpdf2) — avoids WeasyPrint system deps in cloud/dev."""
+    from fpdf import FPDF
+
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=18)
+    pdf.add_page()
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.multi_cell(0, 10, _pdf_safe(title), new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(2)
+    pdf.set_font("Helvetica", size=11)
+    for line in (
+        f"Paciente: {patient_name}",
+        f"Status: {status}",
+        f"Gerado em: {generated_at}",
+        "SerenaPsi - documento do consultorio",
+    ):
+        pdf.multi_cell(0, 6, _pdf_safe(line), new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(6)
+    pdf.set_font("Helvetica", size=12)
+    for paragraph in (body or "").split("\n"):
+        text = _pdf_safe(paragraph) if paragraph.strip() else " "
+        pdf.multi_cell(0, 7, text, new_x="LMARGIN", new_y="NEXT")
+    out = pdf.output()
+    if isinstance(out, (bytes, bytearray)):
+        return bytes(out)
+    return str(out).encode("latin-1", errors="replace")
+
+
+def _pdf_safe(text: str) -> str:
+    """Helvetica core fonts are Latin-1 — normalize common PT-BR characters."""
+    replacements = {
+        "á": "a",
+        "à": "a",
+        "â": "a",
+        "ã": "a",
+        "é": "e",
+        "ê": "e",
+        "í": "i",
+        "ó": "o",
+        "ô": "o",
+        "õ": "o",
+        "ú": "u",
+        "ü": "u",
+        "ç": "c",
+        "Á": "A",
+        "À": "A",
+        "Â": "A",
+        "Ã": "A",
+        "É": "E",
+        "Ê": "E",
+        "Í": "I",
+        "Ó": "O",
+        "Ô": "O",
+        "Õ": "O",
+        "Ú": "U",
+        "Ü": "U",
+        "Ç": "C",
+        "—": "-",
+        "–": "-",
+        "“": '"',
+        "”": '"',
+        "‘": "'",
+        "’": "'",
+        "…": "...",
+        "€": "EUR",
+        "R$": "R$",
+    }
+    out = text or ""
+    for src, dst in replacements.items():
+        out = out.replace(src, dst)
+    return out.encode("latin-1", errors="replace").decode("latin-1")

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   createDocument,
+  downloadDocumentPdf,
   exportDocument,
   finalizeDocument,
   getDocumentTemplates,
@@ -193,11 +194,27 @@ export default function DocumentsPage() {
                     className="rounded-lg border px-3 py-1.5 text-sm"
                     onClick={async () => {
                       const exp = await exportDocument(d.id, "html");
-                      await navigator.clipboard.writeText(exp.content);
-                      setHint(exp.print_hint || "HTML copiado.");
+                      const win = window.open("", "_blank");
+                      if (win) {
+                        win.document.write(exp.content);
+                        win.document.close();
+                        setHint("HTML aberto — use Imprimir se quiser.");
+                      } else {
+                        await navigator.clipboard.writeText(exp.content);
+                        setHint(exp.print_hint || "HTML copiado.");
+                      }
                     }}
                   >
-                    Exportar HTML / PDF
+                    Abrir HTML
+                  </button>
+                  <button
+                    className="rounded-lg border px-3 py-1.5 text-sm"
+                    onClick={async () => {
+                      const { filename } = await downloadDocumentPdf(d.id);
+                      setHint(`PDF baixado: ${filename}`);
+                    }}
+                  >
+                    Baixar PDF
                   </button>
                   {d.status !== "finalized" && (
                     <button

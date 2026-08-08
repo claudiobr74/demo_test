@@ -38,3 +38,10 @@ Módulos versionados em `app/ai_gateway/frameworks/` (inicialmente `cbt` e `sche
 ## Offline assist
 
 Com `AI_ENABLED=false`, o gateway devolve assistência estruturada local e deixa claro que não há LLM — o atendimento não para.
+
+## STT (transcrição de áudio)
+
+- Config: `AI_STT_MODEL` (ex.: `openai:whisper-1` ou `gemini:gemini-2.0-flash`)
+- Features chamam apenas `gateway.transcribe_audio` — nunca o provider direto
+- Sem chave / IA desligada → stub offline + proposta CFP revisável continua disponível
+- Texto colado tem prioridade sobre STT quando ambos existem

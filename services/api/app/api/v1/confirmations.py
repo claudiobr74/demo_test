@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import AuthContext, get_current_auth
-from app.api.v1.schemas import ConfirmationEnqueueRequest
+from app.api.v1.schemas import ConfirmationEnqueueRequest, ConfirmationStatusRequest
 from app.application.confirmation_queue_service import ConfirmationQueueService
 from app.infrastructure.db.session import get_db
 
@@ -31,3 +31,15 @@ async def list_queue(
 ) -> dict:
     items = await ConfirmationQueueService(db, auth).list_queued(limit=limit)
     return {"items": items}
+
+
+@router.post("/queue/{notification_id}/status")
+async def mark_confirmation_status(
+    notification_id: UUID,
+    body: ConfirmationStatusRequest,
+    auth: AuthContext = Depends(get_current_auth),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    return await ConfirmationQueueService(db, auth).mark_status(
+        notification_id, status=body.status
+    )

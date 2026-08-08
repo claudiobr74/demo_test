@@ -141,3 +141,36 @@ async def test_propose_and_apply_cfp_does_not_finalize_record(client: AsyncClien
     records = await client.get(f"/api/v1/clinical-records/patients/{pid}", headers=headers)
     assert records.status_code == 200
     assert records.json()["items"] == []
+
+
+@pytest.mark.asyncio
+async def test_audio_propose_uses_offline_stt_without_ai(client: AsyncClient):
+    auth = await _auth(client, "tr-stt@example.com")
+    headers = {"Authorization": f"Bearer {auth['access_token']}"}
+    pid, sid = await _patient_and_session(client, headers)
+    await client.get("/api/v1/consents/templates", headers=headers)
+    created = await client.post(
+        f"/api/v1/consents/patients/{pid}",
+        headers=headers,
+        json={"consent_type": "transcription"},
+    )
+    await client.post(
+        f"/api/v1/consents/{created.json()['id']}/decision",
+        headers=headers,
+        json={"status": "accepted", "method": "manual"},
+    )
+
+    # Tiny fake webm-ish payload — without AI keys STT falls back offline
+    import base64
+
+    audio_b64 = base64.b64encode(b"0" * 64).decode("ascii")
+    proposed = await client.post(
+        f"/api/v1/sessions/{sid}/transcription/propose",
+        headers=headers,
+        json={"audio_base64": audio_b64, "mime_type": "audio/webm"},
+    )
+    assert proposed.status_code == 200, proposed.text
+    body = proposed.json()
+    assert body["stt"]["mode"] == "offline_assist"
+    assert "Transcrição offline" in body["transcript"]
+    assert body["applied_to_record"] is False

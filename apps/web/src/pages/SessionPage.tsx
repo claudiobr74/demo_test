@@ -81,6 +81,12 @@ export default function SessionPage({ sessionId, onClose }: Props) {
   const [transcriptText, setTranscriptText] = useState("");
   const [cfpDraft, setCfpDraft] = useState<CfpProposal | null>(null);
   const [pasteTranscript, setPasteTranscript] = useState("");
+  const [sttMeta, setSttMeta] = useState<{
+    mode?: string | null;
+    provider?: string | null;
+    model?: string | null;
+    fallback_reason?: string | null;
+  } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const versionRef = useRef(1);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -169,7 +175,15 @@ export default function SessionPage({ sessionId, onClose }: Props) {
       setVersion(res.version);
       setTranscriptText(res.transcript || "");
       setCfpDraft(res.proposal);
+      setSttMeta(res.stt || null);
       setShowCfpPreview(true);
+      if (res.stt?.mode === "offline_assist") {
+        setHint(
+          "STT em modo offline — revise a transcrição e complete o modelo CFP antes de aplicar.",
+        );
+      } else if (res.stt?.mode === "stt") {
+        setHint(`Transcrição automática via ${res.stt.provider || "gateway"} — revise antes de aceitar.`);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Falha ao transcrever o áudio");
     } finally {
@@ -264,6 +278,7 @@ export default function SessionPage({ sessionId, onClose }: Props) {
       setVersion(res.version);
       setTranscriptText(res.transcript || pasteTranscript);
       setCfpDraft(res.proposal);
+      setSttMeta(res.stt || { mode: "paste" });
       setShowCfpPreview(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Falha ao gerar proposta CFP");
@@ -792,6 +807,14 @@ export default function SessionPage({ sessionId, onClose }: Props) {
                     Sugestão revisável — não finaliza o prontuário. Aceite apenas preenche o
                     rascunho da sessão.
                   </p>
+                  {sttMeta?.mode && (
+                    <p className="mt-1 text-xs text-emerald-800/70">
+                      Fonte: {sttMeta.mode}
+                      {sttMeta.provider ? ` · ${sttMeta.provider}` : ""}
+                      {sttMeta.model ? ` · ${sttMeta.model}` : ""}
+                      {sttMeta.fallback_reason ? ` · fallback ${sttMeta.fallback_reason}` : ""}
+                    </p>
+                  )}
                 </div>
               </div>
               <button

@@ -52,6 +52,7 @@ apps/mobile/.metadata
 *.key
 secrets/
 local/
+services/api/storage/
 
 # Logs & temp
 *.log

@@ -269,8 +269,33 @@ class SessionService:
 
         has_audio = bool(audio_base64 and audio_base64.strip())
         transcript = (transcript_text or "").strip()
-        if not transcript:
-            transcript = gateway.offline_transcript_stub(has_audio=has_audio)
+        stt_info: dict = {"mode": "paste", "provider": None, "model": None}
+
+        if transcript:
+            stt_info = {"mode": "paste", "provider": None, "model": None}
+        elif has_audio:
+            stt = await gateway.transcribe_audio(
+                audio_base64=audio_base64.strip(),  # type: ignore[union-attr]
+                mime_type=mime_type,
+            )
+            transcript = (stt.get("text") or "").strip() or gateway.offline_transcript_stub(
+                has_audio=True
+            )
+            stt_info = {
+                "mode": stt.get("mode"),
+                "provider": stt.get("provider"),
+                "model": stt.get("model"),
+                "language": stt.get("language"),
+                "fallback_reason": stt.get("fallback_reason"),
+            }
+        else:
+            transcript = gateway.offline_transcript_stub(has_audio=False)
+            stt_info = {
+                "mode": "offline_assist",
+                "provider": "none",
+                "model": "offline_stt",
+                "fallback_reason": "NO_AUDIO_OR_TEXT",
+            }
 
         proposal = await gateway.propose_cfp_from_transcript(
             transcript=transcript,
@@ -291,7 +316,9 @@ class SessionService:
             "mime_type": mime_type,
             "has_audio": has_audio,
             "proposed_at": datetime.now(UTC).isoformat(),
-            "mode": proposal.get("mode"),
+            "mode": stt_info.get("mode"),
+            "stt": stt_info,
+            "cfp_mode": proposal.get("mode"),
         }
         structured["cfp_proposal"] = {
             "focus": proposal.get("focus"),
@@ -319,7 +346,9 @@ class SessionService:
             resource_id=str(session.id),
             request_id=self.auth.request_id,
             metadata={
-                "mode": proposal.get("mode"),
+                "cfp_mode": proposal.get("mode"),
+                "stt_mode": stt_info.get("mode"),
+                "stt_provider": stt_info.get("provider"),
                 "has_audio": has_audio,
                 "consent_type": "transcription",
             },
@@ -332,6 +361,7 @@ class SessionService:
             "version": session.version,
             "proposal": structured["cfp_proposal"],
             "transcript": structured["transcription"]["text"],
+            "stt": stt_info,
             "applied_to_record": False,
             "note": (
                 "Proposta revisável no modelo CFP. "

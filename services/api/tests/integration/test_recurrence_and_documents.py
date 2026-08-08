@@ -127,11 +127,27 @@ async def test_document_from_template(client: AsyncClient):
         payload = exported.json()
         assert payload["content"]
         assert payload["filename"]
-        assert "Hugo" in payload["content"] or "html" in payload["media_type"]
         if fmt == "txt":
             assert payload["format"] == "txt"
             assert "text/plain" in payload["media_type"]
-        else:
+            assert "Hugo" in payload["content"]
+        elif fmt == "html":
             assert payload["format"] == "html"
             assert "text/html" in payload["media_type"]
             assert payload.get("print_hint")
+            assert "Hugo" in payload["content"]
+        else:
+            assert payload["format"] == "pdf"
+            assert payload["media_type"] == "application/pdf"
+            assert payload.get("encoding") == "base64"
+            assert payload.get("object_key")
+            assert len(payload["content"]) > 40
+
+    binary = await client.get(
+        f"/api/v1/documents/{doc_id}/export",
+        headers=headers,
+        params={"format": "pdf", "download": "true"},
+    )
+    assert binary.status_code == 200
+    assert binary.headers["content-type"].startswith("application/pdf")
+    assert binary.content[:4] == b"%PDF"

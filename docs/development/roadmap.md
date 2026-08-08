@@ -49,11 +49,13 @@
 - Cadastro editável + gates de secretaria no hub/Meu Dia (feito)
 - Hipóteses no hub; fila de confirmações; deep-links; agenda mês; PWA SW (feito)
 - Sessão: gravação + transcrição → proposta modelo CFP revisável (feito; fail-closed em consentimento `transcription`)
+- STT real via Serena AI Gateway (OpenAI Whisper / Gemini multimodal; fallback offline) (feito)
+- Fila de confirmações operável: copiar → marcar enviado/dispensar (feito; providers externos depois)
+- PDF binário de documentos (fpdf2) + `object_key` local (feito)
 
 ### P2/P3 restante
-- Providers STT reais via Serena AI Gateway (hoje: stub offline + estrutura CFP; LLM opcional)
-- Providers reais WhatsApp/SMS/email (fila já existe; sem Gmail Google)
-- PDF binário (WeasyPrint) + armazenamento de documentos
+- Providers reais WhatsApp/SMS/email (fila + fluxo manual já cobrem o consultório sem Gmail)
+- Armazenamento objeto remoto (S3/GCS) para PDFs — hoje disco local `storage/documents`
 
 ### P4
 - Cadernos / biblioteca clínica (Knowledge)

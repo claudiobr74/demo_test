@@ -2,7 +2,7 @@
  * Camada de dados SerenaPsi — substitui Google Drive/Sheets/Calendar/Gmail.
  * Todas as operações passam pela API FastAPI multi-tenant.
  */
-import { apiJson } from "./api";
+import { apiFetch, apiJson } from "./api";
 
 export type ConsentType =
   | "data_processing"
@@ -276,6 +276,12 @@ export async function proposeSessionTranscription(
     version: number;
     proposal: CfpProposal;
     transcript: string;
+    stt?: {
+      mode?: string | null;
+      provider?: string | null;
+      model?: string | null;
+      fallback_reason?: string | null;
+    };
     applied_to_record: boolean;
     note?: string;
   }>(`/api/v1/sessions/${sessionId}/transcription/propose`, {
@@ -399,12 +405,25 @@ export interface ConfirmationQueueItem {
   status?: string;
   appointment_id?: string;
   patient_id?: string;
+  delivery?: string | null;
   created_at?: string | null;
+  copied_at?: string | null;
+  sent_at?: string | null;
 }
 
 export async function getConfirmationQueue(): Promise<ConfirmationQueueItem[]> {
   const data = await apiJson<{ items: ConfirmationQueueItem[] }>("/api/v1/confirmations/queue");
   return data.items || [];
+}
+
+export async function markConfirmationStatus(
+  notificationId: string,
+  status: "copied" | "sent" | "dismissed",
+) {
+  return apiJson(`/api/v1/confirmations/queue/${notificationId}/status`, {
+    method: "POST",
+    body: JSON.stringify({ status }),
+  });
 }
 
 export interface HypothesisItem {
@@ -446,9 +465,34 @@ export async function updateHypothesisStrength(
 }
 
 export async function exportDocument(documentId: string, format: "txt" | "html" | "pdf" = "html") {
-  return apiJson<{ content: string; filename?: string; print_hint?: string }>(
-    `/api/v1/documents/${documentId}/export?format=${format}`,
-  );
+  return apiJson<{
+    content: string;
+    filename?: string;
+    print_hint?: string | null;
+    format?: string;
+    media_type?: string;
+    encoding?: string | null;
+    object_key?: string | null;
+  }>(`/api/v1/documents/${documentId}/export?format=${format}`);
+}
+
+export async function downloadDocumentPdf(documentId: string) {
+  const res = await apiFetch(`/api/v1/documents/${documentId}/export?format=pdf&download=true`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { message?: string }).message || "Falha ao baixar PDF");
+  }
+  const blob = await res.blob();
+  const disposition = res.headers.get("Content-Disposition") || "";
+  const match = /filename="([^"]+)"/.exec(disposition);
+  const filename = match?.[1] || "documento.pdf";
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+  return { filename };
 }
 
 export async function createCharge(payload: {

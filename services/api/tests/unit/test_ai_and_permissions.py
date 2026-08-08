@@ -57,3 +57,44 @@ async def test_offline_supervisor_never_blocks_care():
     assert result.metadata["provider"] == "none"
     assert "não são verdades absolutas" in result.epistemology_note.lower() or "Sugestões" in result.epistemology_note
     assert result.suggested_focus
+
+
+async def test_transcribe_audio_offline_when_ai_disabled():
+    import base64
+
+    gw = SerenaAIGateway()
+    result = await gw.transcribe_audio(
+        audio_base64=base64.b64encode(b"x" * 64).decode("ascii"),
+        mime_type="audio/webm",
+    )
+    assert result["mode"] == "offline_assist"
+    assert result["provider"] == "none"
+    assert "Transcrição offline" in result["text"]
+
+
+async def test_transcribe_audio_mocked_provider(monkeypatch):
+    import base64
+
+    from app.core import config as config_mod
+
+    monkeypatch.setattr(config_mod.settings, "ai_enabled", True)
+    monkeypatch.setattr(config_mod.settings, "openai_api_key", "sk-test")
+    monkeypatch.setattr(config_mod.settings, "ai_stt_model", "openai:whisper-1")
+
+    class FakeProvider:
+        async def transcribe(self, **kwargs):
+            return {"text": "Paciente falou sobre ansiedade.", "provider": "openai", "model": "whisper-1"}
+
+    monkeypatch.setattr(
+        "app.ai_gateway.providers.resolve_provider",
+        lambda _name: FakeProvider(),
+    )
+
+    gw = SerenaAIGateway()
+    result = await gw.transcribe_audio(
+        audio_base64=base64.b64encode(b"x" * 64).decode("ascii"),
+        mime_type="audio/webm",
+    )
+    assert result["mode"] == "stt"
+    assert result["text"] == "Paciente falou sobre ansiedade."
+    assert result["provider"] == "openai"

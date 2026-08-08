@@ -235,6 +235,10 @@ class ConfirmationEnqueueRequest(APIModel):
     channel: str | None = "whatsapp"
 
 
+class ConfirmationStatusRequest(APIModel):
+    status: str = Field(pattern="^(copied|sent|dismissed)$")
+
+
 class ConsentCreateRequest(APIModel):
     consent_type: str
     template_id: UUID | None = None
