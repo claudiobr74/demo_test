@@ -8,18 +8,19 @@
 - Serena AI Gateway (offline assist + frameworks CBT/Schema)
 - Consentimentos versionados (API + hub)
 - Prontuário longitudinal (lista)
-- Flutter: Agenda dia/semana, sessão com autosave, hub com Supervisor
+- Flutter: Agenda dia/semana/mês, sessão com autosave, hub com Supervisor
 - App servido na mesma origem `:8000` da API
 - Financeiro: cobrança ao fechar sessão, pagamentos, painel
 - Case Memory (fatos/observações/hipóteses + aceite de sugestão IA)
 - Preparar sessão (contexto + memória do caso)
 - Reagendar na agenda + mensagem de confirmação (copiar)
+- Recorrência semanal/quinzenal de atendimentos
+- Documentos: modelos, rascunho, finalizar, copiar texto
 
 ## Próximo
 
 ### P1 restante
-- Agenda mês + drag-and-drop
-- Recorrência de atendimentos
+- Agenda drag-and-drop / edição visual de horário
 
 ### P2
 - Providers LLM reais
@@ -27,7 +28,8 @@
 - Proveniência enriquecida na memória
 
 ### P3
-- Documentos, confirmações multi-canal (envio real)
+- Confirmações multi-canal (envio real)
+- PDF/export e armazenamento de documentos
 
 ### P4–P5
 - RAG, motor longitudinal, planos comerciais

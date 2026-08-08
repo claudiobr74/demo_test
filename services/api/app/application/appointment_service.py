@@ -14,6 +14,7 @@ from app.core.errors import ConflictError, NotFoundError, ValidationAppError
 from app.core.permissions import Permission
 from app.infrastructure.db.models_clinical import (
     Appointment,
+    AppointmentRecurrence,
     ClinicalRecord,
     ClinicalSession,
     Consent,
@@ -75,6 +76,22 @@ class AppointmentService:
             if existing:
                 return self._to_dto(existing, patient)
 
+        frequency = (data.get("recurrence_frequency") or "none").lower()
+        if frequency in {"weekly", "biweekly"}:
+            return await self._create_series(
+                patient=patient,
+                professional_id=professional_id,
+                starts_at=starts_at,
+                duration=duration,
+                modality=data.get("modality") or patient.modality,
+                location=data.get("location"),
+                status=data.get("status") or "awaiting_confirmation",
+                notes_admin=data.get("notes_admin"),
+                frequency=frequency,
+                count=int(data.get("recurrence_count") or 8),
+                idempotency_key=idem,
+            )
+
         appt = Appointment(
             organization_id=self.auth.organization_id,
             patient_id=patient_id,
@@ -106,6 +123,98 @@ class AppointmentService:
         await self.db.commit()
         await self.db.refresh(appt)
         return self._to_dto(appt, patient)
+
+    async def _create_series(
+        self,
+        *,
+        patient: Patient,
+        professional_id: uuid.UUID,
+        starts_at: datetime,
+        duration: int,
+        modality: str,
+        location: str | None,
+        status: str,
+        notes_admin: str | None,
+        frequency: str,
+        count: int,
+        idempotency_key: str | None,
+    ) -> dict:
+        if status not in VALID_APPT_STATUS:
+            raise ValidationAppError("Status de atendimento inválido.")
+        if count < 2 or count > 52:
+            raise ValidationAppError("Série deve ter entre 2 e 52 ocorrências.")
+        interval_days = 7 if frequency == "weekly" else 14
+        rrule = f"FREQ={'WEEKLY' if frequency == 'weekly' else 'WEEKLY'};INTERVAL={1 if frequency == 'weekly' else 2};COUNT={count}"
+
+        recurrence = AppointmentRecurrence(
+            organization_id=self.auth.organization_id,
+            patient_id=patient.id,
+            professional_id=professional_id,
+            rrule=rrule,
+            duration_minutes=duration,
+            modality=modality,
+            location=location,
+            ends_at=starts_at + timedelta(days=interval_days * (count - 1)),
+            is_active=True,
+        )
+        self.db.add(recurrence)
+        await self.db.flush()
+
+        created: list[Appointment] = []
+        skipped: list[str] = []
+        for i in range(count):
+            slot_start = starts_at + timedelta(days=interval_days * i)
+            slot_end = slot_start + timedelta(minutes=duration)
+            if await self._find_conflict(professional_id, slot_start, slot_end):
+                skipped.append(slot_start.isoformat())
+                continue
+            appt = Appointment(
+                organization_id=self.auth.organization_id,
+                patient_id=patient.id,
+                professional_id=professional_id,
+                starts_at=slot_start,
+                ends_at=slot_end,
+                duration_minutes=duration,
+                modality=modality,
+                location=location,
+                status=status,
+                confirmation_status="pending",
+                recurrence_id=recurrence.id,
+                notes_admin=notes_admin,
+                idempotency_key=f"{idempotency_key}:{i}" if idempotency_key and i == 0 else (
+                    f"{idempotency_key}:{i}" if idempotency_key else None
+                ),
+            )
+            self.db.add(appt)
+            created.append(appt)
+
+        if not created:
+            raise ConflictError(
+                "Nenhuma ocorrência pôde ser criada — todos os horários estão ocupados.",
+                code="APPOINTMENT_CONFLICT",
+            )
+
+        await self.db.flush()
+        await write_audit(
+            self.db,
+            organization_id=self.auth.organization_id,
+            actor_user_id=self.auth.user_id,
+            action="appointment.series_created",
+            resource_type="appointment_recurrence",
+            resource_id=str(recurrence.id),
+            request_id=self.auth.request_id,
+            metadata={"count": len(created), "skipped": len(skipped), "frequency": frequency},
+        )
+        await self.db.commit()
+        for a in created:
+            await self.db.refresh(a)
+
+        first = self._to_dto(created[0], patient)
+        first["recurrence_id"] = str(recurrence.id)
+        first["series_count"] = len(created)
+        first["skipped_conflicts"] = skipped
+        first["recurrence_frequency"] = frequency
+        return first
 
     async def list_range(self, *, start: datetime, end: datetime) -> list[dict]:
         self.auth.require(Permission.APPOINTMENT_READ)
@@ -228,6 +337,7 @@ class AppointmentService:
             "location": a.location,
             "status": a.status,
             "confirmation_status": a.confirmation_status,
+            "recurrence_id": str(a.recurrence_id) if a.recurrence_id else None,
             "version": a.version,
         }
 

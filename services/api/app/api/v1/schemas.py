@@ -82,6 +82,8 @@ class AppointmentCreateRequest(APIModel):
     status: str | None = None
     notes_admin: str | None = None
     idempotency_key: str | None = None
+    recurrence_frequency: str | None = None  # none | weekly | biweekly
+    recurrence_count: int | None = Field(default=None, ge=2, le=52)
 
 
 class AppointmentStatusRequest(APIModel):
@@ -117,6 +119,19 @@ class SessionAutosaveRequest(APIModel):
 
 class SessionCloseRequest(APIModel):
     finalize_record: bool = True
+
+
+class DocumentCreateRequest(APIModel):
+    patient_id: UUID | None = None
+    template_id: UUID | None = None
+    doc_type: str = "attendance_declaration"
+    title: str | None = None
+    body: str | None = None
+    variables: dict[str, str] | None = None
+
+
+class DocumentFinalizeRequest(APIModel):
+    confirm: bool = True
 
 
 class SupervisorRequest(APIModel):

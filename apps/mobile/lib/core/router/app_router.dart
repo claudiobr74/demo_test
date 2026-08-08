@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../features/appointments/agenda_page.dart';
 import '../../features/auth/login_page.dart';
+import '../../features/documents/documents_page.dart';
 import '../../features/finance/finance_page.dart';
 import '../../features/patients/clinical_records_page.dart';
 import '../../features/patients/patient_hub_page.dart';
@@ -72,6 +73,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/financeiro',
             pageBuilder: (context, state) => const NoTransitionPage(child: FinancePage()),
+          ),
+          GoRoute(
+            path: '/documentos',
+            pageBuilder: (context, state) => const NoTransitionPage(child: DocumentsPage()),
           ),
           GoRoute(
             path: '/sessoes/nova',

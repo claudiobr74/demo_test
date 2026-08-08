@@ -75,6 +75,7 @@ ROLE_PERMISSIONS: dict[str, frozenset[Permission]] = {
             Permission.FINANCE_READ,
             Permission.FINANCE_WRITE,
             Permission.DOCUMENT_READ,
+            Permission.DOCUMENT_WRITE,
             Permission.CONSENT_READ,
             Permission.CONSENT_WRITE,
             Permission.TASK_READ,

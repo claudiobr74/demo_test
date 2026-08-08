@@ -7,7 +7,7 @@ import 'package:intl/intl.dart';
 import '../../core/network/api_client.dart';
 import '../../core/theme/serena_theme.dart';
 
-enum AgendaViewMode { day, week }
+enum AgendaViewMode { day, week, month }
 
 class AgendaModeNotifier extends Notifier<AgendaViewMode> {
   @override
@@ -20,6 +20,9 @@ class AgendaAnchorNotifier extends Notifier<DateTime> {
   DateTime build() => DateTime.now();
   void setDate(DateTime value) => state = value;
   void shift(int days) => state = state.add(Duration(days: days));
+  void shiftMonths(int months) {
+    state = DateTime(state.year, state.month + months, 1);
+  }
 }
 
 final agendaModeProvider = NotifierProvider<AgendaModeNotifier, AgendaViewMode>(
@@ -38,10 +41,13 @@ final agendaProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((r
   if (mode == AgendaViewMode.day) {
     start = DateTime(anchor.year, anchor.month, anchor.day);
     end = start.add(const Duration(days: 1));
-  } else {
+  } else if (mode == AgendaViewMode.week) {
     final weekday = anchor.weekday; // 1=Mon
     start = DateTime(anchor.year, anchor.month, anchor.day).subtract(Duration(days: weekday - 1));
     end = start.add(const Duration(days: 7));
+  } else {
+    start = DateTime(anchor.year, anchor.month, 1);
+    end = DateTime(anchor.year, anchor.month + 1, 1);
   }
 
   final data = await client.get(
@@ -60,9 +66,12 @@ class AgendaPage extends ConsumerWidget {
     final mode = ref.watch(agendaModeProvider);
     final anchor = ref.watch(agendaAnchorProvider);
     final agenda = ref.watch(agendaProvider);
-    final dateLabel = mode == AgendaViewMode.day
-        ? DateFormat('EEE dd/MM/yyyy').format(anchor)
-        : 'Semana de ${DateFormat('dd/MM').format(anchor.subtract(Duration(days: anchor.weekday - 1)))}';
+    final dateLabel = switch (mode) {
+      AgendaViewMode.day => DateFormat('EEE dd/MM/yyyy').format(anchor),
+      AgendaViewMode.week =>
+        'Semana de ${DateFormat('dd/MM').format(anchor.subtract(Duration(days: anchor.weekday - 1)))}',
+      AgendaViewMode.month => DateFormat('MM/yyyy').format(anchor),
+    };
 
     return CustomScrollView(
       slivers: [
@@ -87,6 +96,7 @@ class AgendaPage extends ConsumerWidget {
                   segments: const [
                     ButtonSegment(value: AgendaViewMode.day, label: Text('Dia'), icon: Icon(Icons.today)),
                     ButtonSegment(value: AgendaViewMode.week, label: Text('Semana'), icon: Icon(Icons.view_week)),
+                    ButtonSegment(value: AgendaViewMode.month, label: Text('Mês'), icon: Icon(Icons.calendar_month)),
                   ],
                   selected: {mode},
                   onSelectionChanged: (v) => ref.read(agendaModeProvider.notifier).setMode(v.first),
@@ -96,8 +106,12 @@ class AgendaPage extends ConsumerWidget {
                   children: [
                     IconButton(
                       onPressed: () {
-                        final delta = mode == AgendaViewMode.day ? -1 : -7;
-                        ref.read(agendaAnchorProvider.notifier).shift(delta);
+                        if (mode == AgendaViewMode.month) {
+                          ref.read(agendaAnchorProvider.notifier).shiftMonths(-1);
+                        } else {
+                          final delta = mode == AgendaViewMode.day ? -1 : -7;
+                          ref.read(agendaAnchorProvider.notifier).shift(delta);
+                        }
                       },
                       icon: const Icon(Icons.chevron_left),
                     ),
@@ -110,8 +124,12 @@ class AgendaPage extends ConsumerWidget {
                     ),
                     IconButton(
                       onPressed: () {
-                        final delta = mode == AgendaViewMode.day ? 1 : 7;
-                        ref.read(agendaAnchorProvider.notifier).shift(delta);
+                        if (mode == AgendaViewMode.month) {
+                          ref.read(agendaAnchorProvider.notifier).shiftMonths(1);
+                        } else {
+                          final delta = mode == AgendaViewMode.day ? 1 : 7;
+                          ref.read(agendaAnchorProvider.notifier).shift(delta);
+                        }
                       },
                       icon: const Icon(Icons.chevron_right),
                     ),
@@ -150,6 +168,12 @@ class AgendaPage extends ConsumerWidget {
                         ),
                       );
                     }
+                    if (mode == AgendaViewMode.month) {
+                      return _MonthAgendaList(
+                        items: items,
+                        onChanged: () => ref.invalidate(agendaProvider),
+                      );
+                    }
                     return Column(
                       children: [
                         for (final item in items)
@@ -182,6 +206,45 @@ class AgendaPage extends ConsumerWidget {
     if (created == true) {
       ref.invalidate(agendaProvider);
     }
+  }
+}
+
+class _MonthAgendaList extends ConsumerWidget {
+  const _MonthAgendaList({required this.items, required this.onChanged});
+  final List<Map<String, dynamic>> items;
+  final VoidCallback onChanged;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final byDay = <String, List<Map<String, dynamic>>>{};
+    for (final item in items) {
+      final starts = DateTime.tryParse(item['starts_at'] as String? ?? '')?.toLocal();
+      final key = starts == null ? '—' : DateFormat('yyyy-MM-dd').format(starts);
+      byDay.putIfAbsent(key, () => []).add(item);
+    }
+    final keys = byDay.keys.toList()..sort();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final key in keys) ...[
+          Padding(
+            padding: const EdgeInsets.only(top: 8, bottom: 8),
+            child: Text(
+              key == '—'
+                  ? 'Sem data'
+                  : DateFormat('EEE dd/MM').format(DateTime.parse(key)),
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(color: SerenaColors.sageDark),
+            ),
+          ),
+          for (final item in byDay[key]!)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _AppointmentCard(item: item, onChanged: onChanged),
+            ),
+        ],
+      ],
+    );
   }
 }
 
@@ -223,7 +286,8 @@ class _AppointmentCard extends ConsumerWidget {
           const SizedBox(height: 6),
           Text(
             _modality(item['modality'] as String?) +
-                (item['location'] != null ? ' · ${item['location']}' : ''),
+                (item['location'] != null ? ' · ${item['location']}' : '') +
+                (item['recurrence_id'] != null ? ' · Série recorrente' : ''),
             style: Theme.of(context).textTheme.bodyMedium,
           ),
           const SizedBox(height: 12),
@@ -415,6 +479,8 @@ class _CreateAppointmentSheetState extends ConsumerState<_CreateAppointmentSheet
   DateTime _starts = DateTime.now().add(const Duration(hours: 1)).copyWith(minute: 0, second: 0, millisecond: 0);
   int _duration = 50;
   String _modality = 'in_person';
+  String _recurrence = 'none';
+  int _recurrenceCount = 8;
   bool _loading = false;
   String? _error;
 
@@ -445,14 +511,26 @@ class _CreateAppointmentSheetState extends ConsumerState<_CreateAppointmentSheet
       _error = null;
     });
     try {
-      await ref.read(apiClientProvider).post('/api/v1/appointments', body: {
+      final body = <String, dynamic>{
         'patient_id': _patientId,
         'starts_at': _starts.toUtc().toIso8601String(),
         'duration_minutes': _duration,
         'modality': _modality,
         'status': 'awaiting_confirmation',
-      });
-      if (mounted) Navigator.of(context).pop(true);
+      };
+      if (_recurrence != 'none') {
+        body['recurrence_frequency'] = _recurrence;
+        body['recurrence_count'] = _recurrenceCount;
+      }
+      final result = await ref.read(apiClientProvider).post('/api/v1/appointments', body: body);
+      if (!mounted) return;
+      final series = result['series_count'] as int?;
+      if (series != null && series > 1) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Série criada: $series atendimentos.')),
+        );
+      }
+      Navigator.of(context).pop(true);
     } catch (e) {
       setState(() => _error = e.toString());
     } finally {
@@ -465,86 +543,113 @@ class _CreateAppointmentSheetState extends ConsumerState<_CreateAppointmentSheet
     final bottom = MediaQuery.viewInsetsOf(context).bottom;
     return Padding(
       padding: EdgeInsets.fromLTRB(24, 8, 24, 24 + bottom),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text('Novo atendimento', style: Theme.of(context).textTheme.headlineMedium),
-          const SizedBox(height: 16),
-          DropdownButtonFormField<String>(
-            value: _patientId,
-            items: [
-              for (final p in _patients)
-                DropdownMenuItem(value: p['id'] as String, child: Text(p['display_name'] as String? ?? '')),
-            ],
-            onChanged: (v) => setState(() => _patientId = v),
-            decoration: const InputDecoration(labelText: 'Paciente'),
-          ),
-          const SizedBox(height: 12),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Data e horário'),
-            subtitle: Text(DateFormat("dd/MM/yyyy HH:mm").format(_starts)),
-            trailing: const Icon(Icons.edit_calendar_outlined),
-            onTap: () async {
-              final d = await showDatePicker(
-                context: context,
-                initialDate: _starts,
-                firstDate: DateTime.now().subtract(const Duration(days: 1)),
-                lastDate: DateTime.now().add(const Duration(days: 365)),
-              );
-              if (d == null) return;
-              if (!context.mounted) return;
-              final t = await showTimePicker(
-                context: context,
-                initialTime: TimeOfDay.fromDateTime(_starts),
-              );
-              if (t == null) return;
-              if (!mounted) return;
-              setState(() {
-                _starts = DateTime(d.year, d.month, d.day, t.hour, t.minute);
-              });
-            },
-          ),
-          const SizedBox(height: 8),
-          DropdownButtonFormField<int>(
-            value: _duration,
-            items: const [
-              DropdownMenuItem(value: 30, child: Text('30 min')),
-              DropdownMenuItem(value: 50, child: Text('50 min')),
-              DropdownMenuItem(value: 60, child: Text('60 min')),
-              DropdownMenuItem(value: 90, child: Text('90 min')),
-            ],
-            onChanged: (v) => setState(() => _duration = v ?? 50),
-            decoration: const InputDecoration(labelText: 'Duração'),
-          ),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<String>(
-            value: _modality,
-            items: const [
-              DropdownMenuItem(value: 'in_person', child: Text('Presencial')),
-              DropdownMenuItem(value: 'online', child: Text('Online')),
-              DropdownMenuItem(value: 'hybrid', child: Text('Híbrida')),
-            ],
-            onChanged: (v) => setState(() => _modality = v ?? 'in_person'),
-            decoration: const InputDecoration(labelText: 'Modalidade'),
-          ),
-          if (_error != null) ...[
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('Novo atendimento', style: Theme.of(context).textTheme.headlineMedium),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<String>(
+              value: _patientId,
+              items: [
+                for (final p in _patients)
+                  DropdownMenuItem(value: p['id'] as String, child: Text(p['display_name'] as String? ?? '')),
+              ],
+              onChanged: (v) => setState(() => _patientId = v),
+              decoration: const InputDecoration(labelText: 'Paciente'),
+            ),
             const SizedBox(height: 12),
-            Text(_error!, style: const TextStyle(color: SerenaColors.danger)),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Data e horário'),
+              subtitle: Text(DateFormat("dd/MM/yyyy HH:mm").format(_starts)),
+              trailing: const Icon(Icons.edit_calendar_outlined),
+              onTap: () async {
+                final d = await showDatePicker(
+                  context: context,
+                  initialDate: _starts,
+                  firstDate: DateTime.now().subtract(const Duration(days: 1)),
+                  lastDate: DateTime.now().add(const Duration(days: 365)),
+                );
+                if (d == null) return;
+                if (!context.mounted) return;
+                final t = await showTimePicker(
+                  context: context,
+                  initialTime: TimeOfDay.fromDateTime(_starts),
+                );
+                if (t == null) return;
+                if (!mounted) return;
+                setState(() {
+                  _starts = DateTime(d.year, d.month, d.day, t.hour, t.minute);
+                });
+              },
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<int>(
+              value: _duration,
+              items: const [
+                DropdownMenuItem(value: 30, child: Text('30 min')),
+                DropdownMenuItem(value: 50, child: Text('50 min')),
+                DropdownMenuItem(value: 60, child: Text('60 min')),
+                DropdownMenuItem(value: 90, child: Text('90 min')),
+              ],
+              onChanged: (v) => setState(() => _duration = v ?? 50),
+              decoration: const InputDecoration(labelText: 'Duração'),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              value: _modality,
+              items: const [
+                DropdownMenuItem(value: 'in_person', child: Text('Presencial')),
+                DropdownMenuItem(value: 'online', child: Text('Online')),
+                DropdownMenuItem(value: 'hybrid', child: Text('Híbrida')),
+              ],
+              onChanged: (v) => setState(() => _modality = v ?? 'in_person'),
+              decoration: const InputDecoration(labelText: 'Modalidade'),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              value: _recurrence,
+              items: const [
+                DropdownMenuItem(value: 'none', child: Text('Sem recorrência')),
+                DropdownMenuItem(value: 'weekly', child: Text('Semanal')),
+                DropdownMenuItem(value: 'biweekly', child: Text('Quinzenal')),
+              ],
+              onChanged: (v) => setState(() => _recurrence = v ?? 'none'),
+              decoration: const InputDecoration(labelText: 'Recorrência'),
+            ),
+            if (_recurrence != 'none') ...[
+              const SizedBox(height: 12),
+              DropdownButtonFormField<int>(
+                value: _recurrenceCount,
+                items: const [
+                  DropdownMenuItem(value: 4, child: Text('4 ocorrências')),
+                  DropdownMenuItem(value: 8, child: Text('8 ocorrências')),
+                  DropdownMenuItem(value: 12, child: Text('12 ocorrências')),
+                  DropdownMenuItem(value: 24, child: Text('24 ocorrências')),
+                ],
+                onChanged: (v) => setState(() => _recurrenceCount = v ?? 8),
+                decoration: const InputDecoration(labelText: 'Quantidade'),
+              ),
+            ],
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(_error!, style: const TextStyle(color: SerenaColors.danger)),
+            ],
+            const SizedBox(height: 20),
+            FilledButton(
+              onPressed: _loading ? null : _save,
+              child: _loading
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : Text(_recurrence == 'none' ? 'Agendar' : 'Criar série'),
+            ),
           ],
-          const SizedBox(height: 20),
-          FilledButton(
-            onPressed: _loading ? null : _save,
-            child: _loading
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                  )
-                : const Text('Agendar'),
-          ),
-        ],
+        ),
       ),
     );
   }
